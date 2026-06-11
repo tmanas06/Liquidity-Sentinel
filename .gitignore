@@ -4,4 +4,4 @@ api/.env
 agent/.env
 *.log
 rendered_docx/
-
+*.local

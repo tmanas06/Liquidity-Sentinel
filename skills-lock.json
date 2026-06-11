@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "skills": {
+    "blockscout-analysis": {
+      "source": "blockscout/agent-skills",
+      "sourceType": "github",
+      "skillPath": "blockscout-analysis/SKILL.md",
+      "computedHash": "6ace51432705facc0771a497ff5eceb865e6c056d2479510b2ec28f497f6aa36"
+    },
+    "web3-dev": {
+      "source": "blockscout/agent-skills",
+      "sourceType": "github",
+      "skillPath": "web3-dev/SKILL.md",
+      "computedHash": "c911755ecef3fd78fcb3ceed0211a3a69341f8fe50c89703fa51db155615a72a"
+    }
+  }
+}

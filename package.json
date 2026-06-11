@@ -6,10 +6,15 @@
   "scripts": {
     "dev:api": "node api/src/server.js",
     "dev:agent": "node agent/src/agent.js",
+    "smoke:milestone1": "node scripts/milestone1-smoke.js",
+    "smoke:agent": "node scripts/root-agent-smoke.js",
     "smoke": "node scripts/smoke-test.js"
+  },
+  "dependencies": {
+    "ethers": "^6.16.0",
+    "express": "^5.2.1"
   },
   "engines": {
     "node": ">=18"
   }
 }
-

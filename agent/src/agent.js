@@ -44,7 +44,15 @@ export async function runAgent(configOverrides = {}) {
     "x-payment": encodePaymentHeader(txHash)
   });
 
-  log("agent.retry.response", { status: retry.status, body: retry.body });
+  if (retry.status === 200 && retry.body.capitalPermission) {
+    log("agent.capital_permission.received", {
+      requestId: invoice.requestId,
+      paymentTx: txHash,
+      permission: retry.body.capitalPermission
+    });
+  } else {
+    log("agent.retry.response", { status: retry.status, body: retry.body });
+  }
   return retry;
 }
 
