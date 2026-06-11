@@ -1,0 +1,15 @@
+{
+  "name": "liquidity-sentinel-dev-b",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev:api": "node api/src/server.js",
+    "dev:agent": "node agent/src/agent.js",
+    "smoke": "node scripts/smoke-test.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
+

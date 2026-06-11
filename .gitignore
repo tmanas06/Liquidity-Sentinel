@@ -1,0 +1,7 @@
+node_modules/
+.env
+api/.env
+agent/.env
+*.log
+rendered_docx/
+
