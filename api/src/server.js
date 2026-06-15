@@ -1,3 +1,8 @@
+delete process.env.HTTP_PROXY;
+delete process.env.HTTPS_PROXY;
+delete process.env.http_proxy;
+delete process.env.https_proxy;
+
 import { createServer } from "node:http";
 import { fileURLToPath } from "node:url";
 
@@ -6,6 +11,7 @@ import { readJsonBody, sendJson } from "./http.js";
 import { createInvoiceStore } from "./invoiceStore.js";
 import { priceFromReputation, readReputation } from "./services/reputation.js";
 import { verifyPaymentHeader } from "./services/paymentVerifier.js";
+import { submitOnChainFeedback } from "./services/reputationFeedback.js";
 
 function log(event, details = {}) {
   console.log(JSON.stringify({ ts: new Date().toISOString(), event, ...details }));
@@ -156,6 +162,7 @@ async function handleCapitalRequest({ req, res, body, config, invoiceStore }) {
   }
 
   invoiceStore.markPaid(invoice.requestId, verification.txHash);
+  const feedbackResult = await submitOnChainFeedback(invoice.agentId, 98, config);
   sendJson(res, 200, {
     status: 200,
     requestId: invoice.requestId,
@@ -167,10 +174,7 @@ async function handleCapitalRequest({ req, res, body, config, invoiceStore }) {
       strategyHint: body.strategyHint,
       expiresInSeconds: 180
     },
-    reputationFeedback: {
-      status: "queued",
-      note: "Wire this to Dev A's validation function when the final ABI is available."
-    }
+    reputationFeedback: feedbackResult
   });
 }
 

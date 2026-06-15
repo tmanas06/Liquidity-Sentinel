@@ -37,6 +37,16 @@ export function loadConfig(overrides = {}) {
   loadDotEnvFile(path.resolve(process.cwd(), ".env"));
   loadDotEnvFile(path.resolve(here, "../.env"));
 
+  let deployed = {};
+  try {
+    const addressesPath = path.resolve(here, "config/addresses.json");
+    if (existsSync(addressesPath)) {
+      deployed = JSON.parse(readFileSync(addressesPath, "utf8"));
+    }
+  } catch (err) {
+    // Ignore
+  }
+
   return {
     port: intEnv("API_PORT", 4020),
     network: env("NETWORK", "avalanche-fuji"),
@@ -46,12 +56,14 @@ export function loadConfig(overrides = {}) {
     fujiRpcUrl: env("FUJI_RPC_URL", "https://api.avax-test.network/ext/bc/C/rpc"),
     tokenAddress: env("USDC_FUJI_ADDRESS", "0x0000000000000000000000000000000000000001"),
     sentinelVaultAddress: env("SENTINEL_VAULT_ADDRESS", "0x0000000000000000000000000000000000000402"),
-    reputationRegistryAddress: env("REPUTATION_REGISTRY_ADDRESS", ""),
-    mockVaultAddress: env("MOCK_VAULT_ADDRESS", "0x0000000000000000000000000000000000000F1A"),
+    reputationRegistryAddress: env("REPUTATION_REGISTRY_ADDRESS", deployed.reputationRegistry || ""),
+    identityRegistryAddress: env("IDENTITY_REGISTRY_ADDRESS", deployed.identityRegistry || ""),
+    mockVaultAddress: env("MOCK_VAULT_ADDRESS", deployed.mockVault || "0x0000000000000000000000000000000000000F1A"),
     lowTierAmount: env("LOW_TIER_AMOUNT", "10000"),
     highTierAmount: env("HIGH_TIER_AMOUNT", "500000"),
     tokenDecimals: intEnv("TOKEN_DECIMALS", 6),
     invoiceTtlSeconds: intEnv("INVOICE_TTL_SECONDS", 300),
+    sentinelPrivateKey: env("SENTINEL_PRIVATE_KEY", ""),
     ...overrides
   };
 }

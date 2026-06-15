@@ -1,3 +1,8 @@
+delete process.env.HTTP_PROXY;
+delete process.env.HTTPS_PROXY;
+delete process.env.http_proxy;
+delete process.env.https_proxy;
+
 import crypto from "node:crypto";
 import { spawn } from "node:child_process";
 

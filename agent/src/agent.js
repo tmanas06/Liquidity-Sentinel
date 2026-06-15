@@ -1,3 +1,8 @@
+delete process.env.HTTP_PROXY;
+delete process.env.HTTPS_PROXY;
+delete process.env.http_proxy;
+delete process.env.https_proxy;
+
 import { fileURLToPath } from "node:url";
 
 import { loadAgentConfig } from "./config.js";

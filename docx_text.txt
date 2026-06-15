@@ -1,0 +1,1 @@
+Error reading docx: [Errno 1] Operation not permitted: '/Users/manas/Downloads/Liquidity Sentinel - Project Requirements and Build Spec.docx'

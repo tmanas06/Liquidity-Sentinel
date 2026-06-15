@@ -14,6 +14,10 @@
     "ethers": "^6.16.0",
     "express": "^5.2.1"
   },
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^5.0.0",
+    "hardhat": "^2.22.2"
+  },
   "engines": {
     "node": ">=18"
   }
