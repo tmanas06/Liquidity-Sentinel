@@ -107,6 +107,13 @@ async function settleInvoiceWithEthers(invoice, config) {
 
   const provider = new ethers.JsonRpcProvider(config.fujiRpcUrl);
   const wallet = new ethers.Wallet(config.agentPrivateKey, provider);
+  
+  const balance = await provider.getBalance(wallet.address);
+  if (balance === 0n) {
+      console.error(`🚨 [CRITICAL] Signer ${wallet.address} has 0 AVAX. Fund gas at faucet.avax.network first!`);
+      process.exit(1);
+  }
+
   const erc20 = new ethers.Contract(
     invoice.token,
     ["function transfer(address to, uint256 amount) returns (bool)"],

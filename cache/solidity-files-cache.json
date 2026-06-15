@@ -1,0 +1,228 @@
+{
+  "_format": "hh-sol-cache-2",
+  "files": {
+    "D:\\project\\Status402\\contracts\\IdentityRegistry.sol": {
+      "lastModificationDate": 1781538752733,
+      "contentHash": "9f17995b1035c4d76fee37bf637a3d7a",
+      "sourceName": "contracts/IdentityRegistry.sol",
+      "solcConfig": {
+        "version": "0.8.20",
+        "settings": {
+          "evmVersion": "paris",
+          "optimizer": {
+            "enabled": false,
+            "runs": 200
+          },
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [
+        "./interfaces/IIdentityRegistry.sol",
+        "./libraries/Constants.sol"
+      ],
+      "versionPragmas": [
+        "^0.8.20"
+      ],
+      "artifacts": [
+        "IdentityRegistry"
+      ]
+    },
+    "D:\\project\\Status402\\contracts\\interfaces\\IIdentityRegistry.sol": {
+      "lastModificationDate": 1781538752737,
+      "contentHash": "233221f1feb1bcaf67cb18e9d517fd84",
+      "sourceName": "contracts/interfaces/IIdentityRegistry.sol",
+      "solcConfig": {
+        "version": "0.8.20",
+        "settings": {
+          "evmVersion": "paris",
+          "optimizer": {
+            "enabled": false,
+            "runs": 200
+          },
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [],
+      "versionPragmas": [
+        "^0.8.20"
+      ],
+      "artifacts": [
+        "IIdentityRegistry"
+      ]
+    },
+    "D:\\project\\Status402\\contracts\\libraries\\Constants.sol": {
+      "lastModificationDate": 1781538752737,
+      "contentHash": "b2a8b839a76a8dc9ceea411667d45d44",
+      "sourceName": "contracts/libraries/Constants.sol",
+      "solcConfig": {
+        "version": "0.8.20",
+        "settings": {
+          "evmVersion": "paris",
+          "optimizer": {
+            "enabled": false,
+            "runs": 200
+          },
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [],
+      "versionPragmas": [
+        "^0.8.20"
+      ],
+      "artifacts": [
+        "Constants"
+      ]
+    },
+    "D:\\project\\Status402\\contracts\\ReputationRegistry.sol": {
+      "lastModificationDate": 1781538752735,
+      "contentHash": "56da146c913e44401e9e80bab70e834d",
+      "sourceName": "contracts/ReputationRegistry.sol",
+      "solcConfig": {
+        "version": "0.8.20",
+        "settings": {
+          "evmVersion": "paris",
+          "optimizer": {
+            "enabled": false,
+            "runs": 200
+          },
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [
+        "./interfaces/IReputationRegistry.sol",
+        "./interfaces/IIdentityRegistry.sol",
+        "./libraries/Constants.sol"
+      ],
+      "versionPragmas": [
+        "^0.8.20"
+      ],
+      "artifacts": [
+        "ReputationRegistry"
+      ]
+    },
+    "D:\\project\\Status402\\contracts\\interfaces\\IReputationRegistry.sol": {
+      "lastModificationDate": 1781538752737,
+      "contentHash": "14cafc3cccccd20825b3e267ff6f4e7d",
+      "sourceName": "contracts/interfaces/IReputationRegistry.sol",
+      "solcConfig": {
+        "version": "0.8.20",
+        "settings": {
+          "evmVersion": "paris",
+          "optimizer": {
+            "enabled": false,
+            "runs": 200
+          },
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [],
+      "versionPragmas": [
+        "^0.8.20"
+      ],
+      "artifacts": [
+        "IReputationRegistry"
+      ]
+    },
+    "D:\\project\\Status402\\contracts\\MockFlashLoanVault.sol": {
+      "lastModificationDate": 1781538752735,
+      "contentHash": "8bf4f69fd42db2af31fba3162a27434c",
+      "sourceName": "contracts/MockFlashLoanVault.sol",
+      "solcConfig": {
+        "version": "0.8.20",
+        "settings": {
+          "evmVersion": "paris",
+          "optimizer": {
+            "enabled": false,
+            "runs": 200
+          },
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [],
+      "versionPragmas": [
+        "^0.8.20"
+      ],
+      "artifacts": [
+        "MockFlashLoanVault"
+      ]
+    }
+  }
+}

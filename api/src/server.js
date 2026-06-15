@@ -1,8 +1,3 @@
-delete process.env.HTTP_PROXY;
-delete process.env.HTTPS_PROXY;
-delete process.env.http_proxy;
-delete process.env.https_proxy;
-
 import { createServer } from "node:http";
 import { fileURLToPath } from "node:url";
 
@@ -13,8 +8,20 @@ import { priceFromReputation, readReputation } from "./services/reputation.js";
 import { verifyPaymentHeader } from "./services/paymentVerifier.js";
 import { submitOnChainFeedback } from "./services/reputationFeedback.js";
 
+const connectedClients = new Set();
+
 function log(event, details = {}) {
-  console.log(JSON.stringify({ ts: new Date().toISOString(), event, ...details }));
+  const payload = JSON.stringify({ ts: new Date().toISOString(), event, ...details });
+  console.log(payload);
+  
+  // Broadcast to all connected SSE clients
+  for (const client of connectedClients) {
+    try {
+      client.write(`data: ${payload}\n\n`);
+    } catch (err) {
+      connectedClients.delete(client);
+    }
+  }
 }
 
 function validateCapitalRequest(body) {
@@ -41,7 +48,34 @@ export function createSentinelServer(configOverrides = {}) {
 
   const server = createServer(async (req, res) => {
     try {
+      // Allow Wildcard CORS for Hackathon UI Integration
+      res.setHeader("Access-Control-Allow-Origin", "*");
+      res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+      res.setHeader("Access-Control-Allow-Headers", "Content-Type, X-Payment, X-Request-ID, X-Invoice-ID");
+
+      if (req.method === "OPTIONS") {
+        res.writeHead(204);
+        res.end();
+        return;
+      }
+
       const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
+
+      // Server-Sent Events Endpoint
+      if (req.method === "GET" && url.pathname === "/api/v1/logs") {
+        res.writeHead(200, {
+          "Content-Type": "text/event-stream",
+          "Cache-Control": "no-cache",
+          "Connection": "keep-alive"
+        });
+        
+        // Initial connection payload
+        res.write(`data: ${JSON.stringify({ ts: new Date().toISOString(), event: "api.started", message: "Live Stream Connected" })}\n\n`);
+        
+        connectedClients.add(res);
+        req.on("close", () => connectedClients.delete(res));
+        return;
+      }
 
       if (req.method === "GET" && url.pathname === "/health") {
         sendJson(res, 200, {
@@ -195,4 +229,3 @@ export function startServer(configOverrides = {}) {
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   startServer();
 }
-
