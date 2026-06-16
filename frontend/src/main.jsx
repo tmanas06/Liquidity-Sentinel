@@ -29,7 +29,7 @@ const avalancheFuji = {
 createRoot(document.getElementById('root')).render(
   <StrictMode>
     <PrivyProvider
-      appId="cmqfk2zma002f0clajcnopn2g"
+      appId={import.meta.env.VITE_PRIVY_APP_ID || "cmqfk2zma002f0clajcnopn2g"}
       config={{
         loginMethods: ['wallet'],
         appearance: {
