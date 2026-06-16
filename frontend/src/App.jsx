@@ -1,11 +1,27 @@
 import React, { useState, useEffect } from 'react';
 import { useSentinelData } from './hooks/useSentinelData';
-import { usePrivy } from '@privy-io/react-auth';
-import { Activity, ShieldCheck, FileText, Settings, Bell, LayoutDashboard, X, RefreshCw, CheckCircle2 } from 'lucide-react';
+import { usePrivy, useWallets } from '@privy-io/react-auth';
+import { ethers } from 'ethers';
+import contractAddresses from './addresses.json';
+import { Activity, ShieldCheck, FileText, Settings, Bell, LayoutDashboard, X, RefreshCw, CheckCircle2, Cpu } from 'lucide-react';
+
+const renderMessageContent = (content) => {
+  // Replace markdown bold **text** with HTML <strong>text</strong>
+  const boldRegex = /\*\*(.*?)\*\*/g;
+  const bulletRegex = /^\*\s+(.*)$/gm;
+  const numBulletRegex = /^(\d+)\.\s+(.*)$/gm;
+  let html = content
+    .replace(boldRegex, '<strong class="text-[#4edea3] font-bold">$1</strong>')
+    .replace(bulletRegex, '<li class="ml-4 list-disc my-1 text-[#bbcabf]">$1</li>')
+    .replace(numBulletRegex, '<div class="ml-4 my-1 text-[#d8e3fb] font-mono"><span class="text-[#4edea3] font-bold">$1.</span> $2</div>');
+  
+  return <span dangerouslySetInnerHTML={{ __html: html }} />;
+};
 
 export default function App() {
   const { agents, vaultBalance, liveBlocks, eventsFeed, loading, executeAdminSlash, addLog } = useSentinelData();
   const { login, logout, authenticated, user } = usePrivy();
+  const { wallets } = useWallets();
   const [targetId, setTargetId] = useState('');
   const [scoreInput, setScoreInput] = useState('');
   const [isSlasherPending, setIsSlasherPending] = useState(false);
@@ -28,6 +44,17 @@ export default function App() {
   const [fujiRpcUrl, setFujiRpcUrl] = useState('https://api.avax-test.network/ext/bc/C/rpc');
   const [apiUrl, setApiUrl] = useState('http://localhost:4020/api/v1');
   const [tokenAddress, setTokenAddress] = useState('0x5425890298aed601595a70AB815c96711a31Bc65');
+
+  // Groq AI Agent Chat States
+  const [aiMode, setAiMode] = useState('general');
+  const [chatInput, setChatInput] = useState('');
+  const [generalMessages, setGeneralMessages] = useState([]);
+  const [walletMessages, setWalletMessages] = useState([]);
+  const [isAiLoading, setIsAiLoading] = useState(false);
+  const [txStates, setTxStates] = useState({});
+
+  const chatMessages = aiMode === 'general' ? generalMessages : walletMessages;
+  const setChatMessages = aiMode === 'general' ? setGeneralMessages : setWalletMessages;
 
   const [securityLogs, setSecurityLogs] = useState([
     { ts: '08:12:05', level: 'INFO', msg: 'Gatekeeper network scanner initiated.' },
@@ -100,11 +127,144 @@ export default function App() {
     }
   };
 
+  const handleSendMessage = async (e) => {
+    e.preventDefault();
+    if (!chatInput.trim()) return;
+
+    const userMsgId = Date.now().toString();
+    const userMessage = { id: userMsgId, role: 'user', content: chatInput };
+    setChatMessages(prev => [...prev, userMessage]);
+    const promptText = chatInput;
+    setChatInput('');
+    setIsAiLoading(true);
+
+    try {
+      const systemPrompt = aiMode === 'general' 
+        ? "You are the AVAX Sentinel AI companion. Answer the user's questions about blockchain, web3, Avalanche, liquidity, or general queries in a concise and helpful manner. Do not trigger or format any wallet actions."
+        : `You are the AVAX Sentinel AI execution assistant.
+If the user wants to swap or bridge crypto:
+1. You must identify their intent (swap or bridge).
+2. Format your response to include a JSON block at the very end of your response, starting with \`[ACTION_TRIGGER]\` followed by a JSON string:
+\`[ACTION_TRIGGER]{"action": "swap", "from": "AVAX", "to": "USDC", "amount": "0.1"}\` or \`[ACTION_TRIGGER]{"action": "bridge", "from": "USDC", "to": "Ethereum", "amount": "5"}\`
+Ensure you strictly extract the action (swap or bridge), from token, to token/chain, and amount as numbers. If they specify tokens, AVAX and USDC are supported. If they ask to bridge, USDC can be bridged to Ethereum/Arbitrum/etc.
+Example response: 'I can help you swap 0.1 AVAX to USDC. Please confirm the transaction details below. [ACTION_TRIGGER]{"action": "swap", "from": "AVAX", "to": "USDC", "amount": "0.1"}'
+
+Keep your explanations concise and friendly.`;
+
+      if (!import.meta.env.VITE_GROQ_API_KEY) {
+        throw new Error("VITE_GROQ_API_KEY is not defined in the environment. Please add it to your .env file.");
+      }
+
+      const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${import.meta.env.VITE_GROQ_API_KEY}`
+        },
+        body: JSON.stringify({
+          model: "llama-3.3-70b-versatile",
+          messages: [
+            { role: "system", content: systemPrompt },
+            ...chatMessages.map(m => ({ role: m.role, content: m.content })),
+            { role: "user", content: promptText }
+          ],
+          temperature: 0.2
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`Groq API returned status ${response.status}`);
+      }
+
+      const data = await response.json();
+      const aiText = data.choices[0].message.content;
+      
+      let cleanedText = aiText;
+      let triggerData = null;
+      const triggerIndex = aiText.indexOf("[ACTION_TRIGGER]");
+      if (triggerIndex !== -1) {
+        cleanedText = aiText.substring(0, triggerIndex).trim();
+        const jsonStr = aiText.substring(triggerIndex + "[ACTION_TRIGGER]".length).trim();
+        try {
+          triggerData = JSON.parse(jsonStr);
+        } catch (err) {
+          console.error("JSON parsing of action failed:", err);
+        }
+      }
+
+      const aiMsgId = (Date.now() + 1).toString();
+      setChatMessages(prev => [...prev, { id: aiMsgId, role: 'assistant', content: cleanedText, action: triggerData }]);
+    } catch (err) {
+      setChatMessages(prev => [...prev, { id: Date.now().toString(), role: 'assistant', content: `Error communicating with Groq: ${err.message}` }]);
+    } finally {
+      setIsAiLoading(false);
+    }
+  };
+
+  const handleExecuteOnChainAction = async (msgId, action) => {
+    if (wallets.length === 0) {
+      alert("No wallet connected! Please connect your wallet via Privy first.");
+      return;
+    }
+    setTxStates(prev => ({ ...prev, [msgId]: 'pending' }));
+    addLog("SYSTEM", `Broadcasting on-chain ${action.action} request via connected wallet...`);
+
+    try {
+      const activeWallet = wallets[0];
+      const eip1193Provider = await activeWallet.getEthereumProvider();
+      const browserProvider = new ethers.BrowserProvider(eip1193Provider);
+      const signer = await browserProvider.getSigner();
+
+      let tx;
+      if (action.action === 'swap') {
+        if (action.from.toUpperCase() === 'AVAX') {
+          // Send AVAX swap to vault
+          tx = await signer.sendTransaction({
+            to: contractAddresses.mockVault,
+            value: ethers.parseEther(action.amount.toString())
+          });
+        } else {
+          // Send USDC swap to vault (transfer USDC)
+          const usdcContract = new ethers.Contract(
+            "0x5425890298aed601595a70AB815c96711a31Bc65",
+            ["function transfer(address to, uint256 amount) returns (bool)"],
+            signer
+          );
+          tx = await usdcContract.transfer(contractAddresses.mockVault, ethers.parseUnits(action.amount.toString(), 6));
+        }
+      } else {
+        // Bridge action: transfer AVAX or USDC to simulate lock
+        if (action.from.toUpperCase() === 'AVAX') {
+          tx = await signer.sendTransaction({
+            to: contractAddresses.mockVault,
+            value: ethers.parseEther(action.amount.toString())
+          });
+        } else {
+          const usdcContract = new ethers.Contract(
+            "0x5425890298aed601595a70AB815c96711a31Bc65",
+            ["function transfer(address to, uint256 amount) returns (bool)"],
+            signer
+          );
+          tx = await usdcContract.transfer(contractAddresses.mockVault, ethers.parseUnits(action.amount.toString(), 6));
+        }
+      }
+
+      await tx.wait();
+      setTxStates(prev => ({ ...prev, [msgId]: 'success' }));
+      addLog("SYSTEM", `AI Wallet Action ${action.action} completed! Tx: ${tx.hash.slice(0, 10)}...`, true);
+    } catch (err) {
+      console.error(err);
+      setTxStates(prev => ({ ...prev, [msgId]: 'failed' }));
+      addLog("SYSTEM", `AI Wallet Action failed: ${err.message}`, false);
+    }
+  };
+
   const navItems = [
     { id: 'hub', label: 'Operations Hub', icon: LayoutDashboard },
     { id: 'trust', label: 'Trust Registry', icon: ShieldCheck },
     { id: 'billing', label: 'Billing Terminal', icon: FileText },
-    { id: 'gov', label: 'Governance Panel', icon: Settings }
+    { id: 'gov', label: 'Governance Panel', icon: Settings },
+    { id: 'ai', label: 'Groq AI Agent', icon: Cpu }
   ];
 
   return (
@@ -428,6 +588,185 @@ export default function App() {
                             </div>
                         </form>
                     </div>
+                </div>
+            )}
+
+            {activeTab === 'ai' && (
+                <div className="bg-[#081425] border border-[#1e293b] flex flex-col h-[calc(100vh-140px)] max-w-7xl mx-auto overflow-hidden">
+                    <div className="px-8 py-6 border-b border-[#1e293b] bg-[#081425] flex justify-between items-center shrink-0">
+                        <div>
+                            <h2 className="text-[24px] font-bold text-white mb-2 leading-none">Groq AI Agent</h2>
+                            <p className="text-[11px] text-[#bbcabf] font-mono uppercase tracking-widest flex items-center">
+                                <Cpu className="w-3.5 h-3.5 mr-2 text-[#4edea3]" /> Llama 3.3 Execution Node
+                            </p>
+                        </div>
+                        
+                        {/* Mode toggles */}
+                        <div className="flex bg-[#040e1f] p-1 border border-[#3c4a42]">
+                            <button 
+                                type="button"
+                                onClick={() => setAiMode('general')}
+                                className={`px-4 py-2 font-mono text-[11px] font-bold uppercase tracking-widest transition-all cursor-pointer ${
+                                    aiMode === 'general' 
+                                        ? 'bg-[#10b981] text-[#081425]' 
+                                        : 'text-[#bbcabf] hover:text-white'
+                                }`}
+                            >
+                                General Mode
+                            </button>
+                            <button 
+                                type="button"
+                                onClick={() => setAiMode('wallet')}
+                                className={`px-4 py-2 font-mono text-[11px] font-bold uppercase tracking-widest transition-all cursor-pointer ${
+                                    aiMode === 'wallet' 
+                                        ? 'bg-[#4edea3] text-[#081425] shadow-[0_0_10px_rgba(78,222,163,0.3)]' 
+                                        : 'text-[#bbcabf] hover:text-white'
+                                }`}
+                            >
+                                Wallet Mode
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* Chat Feed */}
+                    <div className="flex-1 overflow-y-auto p-8 bg-[#040e1f] space-y-6 flex flex-col scrollbar-thin">
+                        {chatMessages.length === 0 && (
+                            <div className="h-full flex-1 flex flex-col items-center justify-center text-center p-8 space-y-4">
+                                <div className="p-4 rounded-full bg-[#10b981]/5 border border-[#10b981]/10">
+                                    <Cpu className="w-12 h-12 text-[#4edea3] animate-pulse" />
+                                </div>
+                                <div className="text-sm font-semibold text-white tracking-wider font-mono">
+                                    GROQ CO-PILOT SYSTEM
+                                </div>
+                                <div className="text-xs text-[#bbcabf] font-mono max-w-sm leading-relaxed">
+                                    {aiMode === 'general' 
+                                        ? "Ask general questions about smart contracts, wallets, or network parameters."
+                                        : "Execute instant trades. Prompt: 'Swap 0.1 AVAX' or 'Bridge 5 USDC to Arbitrum'"
+                                    }
+                                </div>
+                            </div>
+                        )}
+                        
+                        {chatMessages.map((msg) => {
+                            const isUser = msg.role === 'user';
+                            return (
+                                <div key={msg.id} className={`flex w-full items-start space-x-3 ${isUser ? 'justify-end' : 'justify-start'}`}>
+                                    
+                                    {/* Left Avatar for AI */}
+                                    {!isUser && (
+                                        <div className="w-8 h-8 rounded-full bg-[#10b981]/15 border border-[#10b981]/30 flex items-center justify-center shrink-0 shadow-[0_0_10px_rgba(16,185,129,0.1)]">
+                                            <Cpu className="w-4 h-4 text-[#4edea3]" />
+                                        </div>
+                                    )}
+
+                                    <div className={`max-w-[70%] flex flex-col ${isUser ? 'items-end' : 'items-start'}`}>
+                                        {/* Sender Name */}
+                                        <span className="text-[10px] font-mono font-bold tracking-wider text-[#bbcabf] mb-1.5 uppercase px-1">
+                                            {isUser ? 'Operator' : 'Groq Llama-3'}
+                                        </span>
+
+                                        {/* Message Bubble */}
+                                        <div className={`p-4 rounded-lg font-sans text-[13px] leading-relaxed shadow-lg transition-all ${
+                                            isUser 
+                                                ? 'bg-[#10b981]/10 text-white border border-[#10b981]/20 rounded-tr-none' 
+                                                : 'bg-[#081425]/90 text-[#d8e3fb] border border-[#1e293b] rounded-tl-none'
+                                        }`}>
+                                            <div className="whitespace-pre-wrap">{renderMessageContent(msg.content)}</div>
+                                            
+                                            {/* Action Confirmation card */}
+                                            {msg.action && (
+                                                <div className="mt-4 bg-[#040e1f] border border-[#1e293b] p-4 rounded-sm relative overflow-hidden">
+                                                    <div className="absolute top-0 left-0 w-1.5 h-full bg-[#ffb95f]"></div>
+                                                    <div className="text-[10px] font-mono font-bold text-[#ffb95f] uppercase tracking-widest mb-3 flex items-center">
+                                                        <Activity className="w-3.5 h-3.5 mr-1.5 animate-pulse" /> Action Payload Extracted
+                                                    </div>
+                                                    <div className="grid grid-cols-2 gap-4 text-xs font-mono text-[#bbcabf] mb-4">
+                                                        <div>
+                                                            <span className="text-[10px] uppercase block mb-0.5 text-slate-500">Operation</span>
+                                                            <span className="text-white font-bold uppercase">{msg.action.action}</span>
+                                                        </div>
+                                                        <div>
+                                                            <span className="text-[10px] uppercase block mb-0.5 text-slate-500">Volume</span>
+                                                            <span className="text-[#4edea3] font-bold">{msg.action.amount} {msg.action.from}</span>
+                                                        </div>
+                                                        <div className="col-span-2 border-t border-[#1e293b] pt-2">
+                                                            <span className="text-[10px] uppercase block mb-0.5 text-slate-500">
+                                                                {msg.action.action === 'swap' ? 'Counterparty Asset' : 'Destination Chain'}
+                                                            </span>
+                                                            <span className="text-white font-bold">{msg.action.to}</span>
+                                                        </div>
+                                                    </div>
+
+                                                    {txStates[msg.id] === 'success' ? (
+                                                        <div className="bg-[#10b981]/10 border border-[#10b981]/20 p-2.5 flex items-center text-[#4edea3] text-[11px] font-mono font-bold">
+                                                            <CheckCircle2 className="w-4 h-4 mr-2 shrink-0" /> SETTLEMENT CONFIRMED ON-CHAIN
+                                                        </div>
+                                                    ) : txStates[msg.id] === 'pending' ? (
+                                                        <div className="bg-[#ffb95f]/10 border border-[#ffb95f]/20 p-2.5 flex items-center text-[#ffb95f] text-[11px] font-mono">
+                                                            <RefreshCw className="w-3.5 h-3.5 mr-2 animate-spin shrink-0" /> MINING ON AVALANCHE FUJI...
+                                                        </div>
+                                                    ) : txStates[msg.id] === 'failed' ? (
+                                                        <div className="bg-[#ffb4ab]/10 border border-[#ffb4ab]/20 p-2.5 text-[#ffb4ab] text-[11px] font-mono font-bold">
+                                                            ❌ TRANSACTION REJECTED BY WALLET OR GATEWAY
+                                                        </div>
+                                                    ) : (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => handleExecuteOnChainAction(msg.id, msg.action)}
+                                                            className="w-full bg-[#ffb95f] hover:bg-[#d97706] text-[#081425] font-mono font-bold py-2.5 text-[11px] uppercase tracking-wider transition-colors cursor-pointer rounded-sm"
+                                                        >
+                                                            Sign & Execute On-Chain
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    {/* Right Avatar for User */}
+                                    {isUser && (
+                                        <div className="w-8 h-8 rounded-full bg-[#152031] border border-[#3c4a42] flex items-center justify-center shrink-0">
+                                            <span className="text-[10px] font-mono font-bold text-[#bbcabf]">OP</span>
+                                        </div>
+                                    )}
+                                </div>
+                            );
+                        })}
+
+                        {isAiLoading && (
+                            <div className="flex items-start space-x-3">
+                                <div className="w-8 h-8 rounded-full bg-[#10b981]/15 border border-[#10b981]/30 flex items-center justify-center shrink-0">
+                                    <Cpu className="w-4 h-4 text-[#4edea3]" />
+                                </div>
+                                <div className="bg-[#081425] border border-[#1e293b] p-4 rounded-lg rounded-tl-none max-w-xs flex items-center space-x-3 text-xs text-[#bbcabf] font-mono">
+                                    <div className="flex space-x-1">
+                                        <div className="w-1.5 h-1.5 rounded-full bg-[#4edea3] animate-bounce" style={{ animationDelay: '0ms' }}></div>
+                                        <div className="w-1.5 h-1.5 rounded-full bg-[#4edea3] animate-bounce" style={{ animationDelay: '150ms' }}></div>
+                                        <div className="w-1.5 h-1.5 rounded-full bg-[#4edea3] animate-bounce" style={{ animationDelay: '300ms' }}></div>
+                                    </div>
+                                    <span>Generating response...</span>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Chat Input form */}
+                    <form onSubmit={handleSendMessage} className="p-6 border-t border-[#1e293b] bg-[#081425] flex space-x-4 shrink-0">
+                        <input 
+                            type="text" 
+                            value={chatInput}
+                            onChange={(e) => setChatInput(e.target.value)}
+                            placeholder={aiMode === 'general' ? 'Ask a general web3 question...' : 'e.g. swap 0.1 AVAX to USDC'}
+                            className="flex-1 bg-[#040e1f] border border-[#3c4a42] p-3 text-xs text-white focus:outline-none focus:border-[#4edea3] transition-colors font-mono"
+                        />
+                        <button 
+                            type="submit"
+                            disabled={isAiLoading || !chatInput.trim()}
+                            className="bg-[#10b981] hover:bg-[#003824] text-[#081425] font-bold px-6 text-xs uppercase tracking-widest transition-colors disabled:opacity-50 cursor-pointer"
+                        >
+                            Send
+                        </button>
+                    </form>
                 </div>
             )}
         </main>
