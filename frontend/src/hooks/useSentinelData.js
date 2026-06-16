@@ -32,13 +32,21 @@ export function useSentinelData() {
   const { wallets } = useWallets();
 
   useEffect(() => {
-    const providerUrl = import.meta.env.VITE_FUJI_RPC_URL || 'https://api.avax-test.network/ext/bc/C/rpc';
-    // Fallback array for resilience as approved by the founder
-    const provider = new ethers.FallbackProvider([
-        new ethers.JsonRpcProvider(providerUrl),
-        new ethers.JsonRpcProvider("https://rpc.ankr.com/avalanche_fuji"),
-        new ethers.JsonRpcProvider("https://avalanche-fuji.publicnode.com")
-    ]);
+    // Use a single primary RPC with manual failover.
+    // FallbackProvider requires quorum agreement between nodes, but public Fuji
+    // RPCs often disagree on block height by 1-2 blocks, causing constant
+    // "quorum not met" crashes. A single provider is far more stable for testnet.
+    const RPC_URLS = [
+      import.meta.env.VITE_FUJI_RPC_URL || 'https://api.avax-test.network/ext/bc/C/rpc',
+      'https://rpc.ankr.com/avalanche_fuji',
+      'https://avalanche-fuji.publicnode.com'
+    ];
+
+    function createProvider(index = 0) {
+      return new ethers.JsonRpcProvider(RPC_URLS[index % RPC_URLS.length]);
+    }
+
+    let provider = createProvider(0);
 
     const identityContract = new ethers.Contract(contractAddresses.identityRegistry, INT_IDENTITY_ABI, provider);
     const repContract = new ethers.Contract(contractAddresses.reputationRegistry, INT_REPUTATION_ABI, provider);

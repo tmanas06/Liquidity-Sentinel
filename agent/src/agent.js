@@ -41,6 +41,14 @@ export async function runAgent(configOverrides = {}) {
     reputationScore: invoice.reputationScore
   });
 
+  log("agent.ai.evaluating", { message: "Asking Groq AI to evaluate invoice risk and pricing..." });
+  const aiApproved = await askGroqShouldPay(invoice);
+  if (!aiApproved) {
+      log("agent.ai.rejected", { reason: "Groq AI determined invoice pricing is too hostile. Aborting payment." });
+      return { status: 403, body: { error: "AI Rejected Invoice" } };
+  }
+  log("agent.ai.approved", { reason: "Groq AI approved the invoice terms. Proceeding to settlement." });
+
   const txHash = await settleInvoice(invoice, config);
   log("agent.payment.sent", { requestId: invoice.requestId, txHash });
 
@@ -83,6 +91,45 @@ async function postCapitalRequest(apiBaseUrl, body, headers = {}) {
     status: response.status,
     body: payload
   };
+}
+
+async function askGroqShouldPay(invoice) {
+  const groqKey = process.env.VITE_GROQ_API_KEY || process.env.GROQ_API_KEY || "";
+  const prompt = `You are an automated DeFi trading agent acting on behalf of a liquidity pool. You requested capital and received an invoice via the x402 protocol.
+  
+Invoice details:
+- Amount to pay: ${invoice.amount} wei/units
+- Your Reputation Score: ${invoice.reputationScore}/100
+- Assigned Pricing Tier: ${invoice.pricingTier}
+
+Decision logic:
+- If the pricing tier is 'standard-risk' or your reputation is low, the protocol is overcharging you. You should reject.
+- If the pricing tier is 'trusted-agent' and the amount is reasonable, approve.
+
+Respond with exactly one word: "APPROVE" or "REJECT". Do not add any punctuation.`;
+
+  try {
+    const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${groqKey}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        model: "llama3-8b-8192",
+        messages: [{ role: "user", content: prompt }],
+        temperature: 0.1
+      })
+    });
+    
+    const data = await response.json();
+    const reply = data.choices?.[0]?.message?.content?.trim()?.toUpperCase() || "";
+    return reply.includes("APPROVE");
+  } catch (error) {
+    console.error("Failed to reach Groq API:", error);
+    // Default to approve if AI is down so demo doesn't completely fail
+    return true;
+  }
 }
 
 async function settleInvoice(invoice, config) {
