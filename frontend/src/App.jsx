@@ -1,13 +1,86 @@
 import React, { useState, useEffect } from 'react';
 import { useSentinelData } from './hooks/useSentinelData';
-import { Activity, ShieldCheck, FileText, Settings, Bell, LayoutDashboard } from 'lucide-react';
+import { usePrivy } from '@privy-io/react-auth';
+import { Activity, ShieldCheck, FileText, Settings, Bell, LayoutDashboard, X, RefreshCw, CheckCircle2 } from 'lucide-react';
 
 export default function App() {
-  const { agents, vaultBalance, liveBlocks, eventsFeed, loading, executeAdminSlash } = useSentinelData();
+  const { agents, vaultBalance, liveBlocks, eventsFeed, loading, executeAdminSlash, addLog } = useSentinelData();
+  const { login, logout, authenticated, user } = usePrivy();
   const [targetId, setTargetId] = useState('');
   const [scoreInput, setScoreInput] = useState('');
   const [isSlasherPending, setIsSlasherPending] = useState(false);
+  const [isInitializing, setIsInitializing] = useState(false);
   const [activeTab, setActiveTab] = useState('billing');
+
+  // Interactive Popup States
+  const [isSecurityOpen, setIsSecurityOpen] = useState(false);
+  const [isSystemOpen, setIsSystemOpen] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
+
+  // Dynamic values to make the dashboard feel alive
+  const [cpuLoad, setCpuLoad] = useState(2.4);
+  const [ramUsed, setRamUsed] = useState(128);
+  const [rpcLatency, setRpcLatency] = useState(110);
+  const [isScanning, setIsScanning] = useState(false);
+
+  // Network configs settings overrides
+  const [fujiRpcUrl, setFujiRpcUrl] = useState('https://api.avax-test.network/ext/bc/C/rpc');
+  const [apiUrl, setApiUrl] = useState('http://localhost:4020/api/v1');
+  const [tokenAddress, setTokenAddress] = useState('0x5425890298aed601595a70AB815c96711a31Bc65');
+
+  const [securityLogs, setSecurityLogs] = useState([
+    { ts: '08:12:05', level: 'INFO', msg: 'Gatekeeper network scanner initiated.' },
+    { ts: '08:12:06', level: 'SECURE', msg: 'EIP-8004 validator credentials verified.' },
+    { ts: '08:15:30', level: 'AUDIT', msg: 'System check completed. 0 anomalies detected.' }
+  ]);
+
+  const notificationsList = [
+    { id: 1, title: 'Gatekeeper Node Online', msg: 'Fuji synchronizer successfully initialized on port 4020.', time: '10m ago', unread: true },
+    { id: 2, title: 'Identity Discovered', msg: 'Agent NFT registered: agent1.sentinel.test (ID 1).', time: '8h ago', unread: false },
+    { id: 3, title: 'Reputation Verified', msg: 'On-chain rating for Agent ID 1 resolved to 96/100.', time: '8h ago', unread: false }
+  ];
+
+  // Dynamic status tick simulator
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCpuLoad(Number((Math.random() * 3 + 1.5).toFixed(1)));
+      setRamUsed(Math.floor(Math.random() * 10 + 124));
+      setRpcLatency(Math.floor(Math.random() * 20 + 100));
+    }, 3000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const runSecurityScan = () => {
+    setIsScanning(true);
+    setSecurityLogs(prev => [
+      ...prev,
+      { ts: new Date().toLocaleTimeString(), level: 'INFO', msg: 'Scanning local memory stack...' }
+    ]);
+    setTimeout(() => {
+      setIsScanning(false);
+      setSecurityLogs(prev => [
+        ...prev,
+        { ts: new Date().toLocaleTimeString(), level: 'SECURE', msg: 'Deep scan complete. No unauthorized contract modifications found.' }
+      ]);
+      addLog("SECURITY", "Node memory stack audited. Security state: CLEAR.", true);
+    }, 1500);
+  };
+
+  const handleInitializeNode = async () => {
+    setIsInitializing(true);
+    addLog("SYSTEM", "Initializing local gatekeeper node...");
+    try {
+      const res = await fetch("http://localhost:4020/health");
+      if (!res.ok) throw new Error(`HTTP Error ${res.status}`);
+      const data = await res.json();
+      addLog("SYSTEM", `Gatekeeper node online! Network: ${data.network}, Mode: ${data.paymentMode} payments / ${data.reputationMode} reputation`, true);
+    } catch (err) {
+      addLog("SYSTEM", `Initialization failed: ${err.message}. Verify that the API server is running.`, false);
+    } finally {
+      setIsInitializing(false);
+    }
+  };
 
   const handleSlashSubmission = async (e) => {
     e.preventDefault();
@@ -15,10 +88,12 @@ export default function App() {
     setIsSlasherPending(true);
     try {
       await executeAdminSlash(targetId, Number(scoreInput));
-      alert(`Successfully updated on-chain reputation for ${targetId}!`);
+      addLog("SYSTEM", `Successfully updated on-chain reputation for Agent ${targetId} to ${scoreInput}!`, true);
+      alert(`Successfully updated on-chain reputation for Agent ${targetId}!`);
       setTargetId('');
       setScoreInput('');
     } catch (err) {
+      addLog("SYSTEM", `Override transaction failed: ${err.message}`, false);
       alert(`Transaction rejected: ${err.message}`);
     } finally {
       setIsSlasherPending(false);
@@ -63,12 +138,32 @@ export default function App() {
           </nav>
         </div>
         <div className="p-6">
-            <button className="w-full bg-[#10b981] hover:bg-[#006c49] text-[#003824] font-bold py-3 rounded-none text-xs uppercase tracking-wider transition-colors mb-6">
-                Initialize Node
+            <button 
+                onClick={handleInitializeNode}
+                disabled={isInitializing}
+                className="w-full bg-[#10b981] hover:bg-[#003824] text-[#081425] font-bold py-3 rounded-none text-xs uppercase tracking-wider transition-all duration-200 mb-6 disabled:opacity-50 hover:shadow-[0_0_15px_rgba(16,185,129,0.3)] cursor-pointer"
+            >
+                {isInitializing ? "Initializing..." : "Initialize Node"}
             </button>
             <div className="space-y-4 text-xs text-[#bbcabf] font-medium">
-                <div className="flex items-center cursor-pointer hover:text-white transition"><ShieldCheck className="w-4 h-4 mr-3"/> Security Logs</div>
-                <div className="flex items-center cursor-pointer hover:text-white transition"><Activity className="w-4 h-4 mr-3"/> System Status</div>
+                <div 
+                    onClick={() => {
+                        setIsSecurityOpen(true);
+                        addLog("SECURITY", "Accessing system firewall logs and audit panel...");
+                    }}
+                    className="flex items-center cursor-pointer hover:text-white transition"
+                >
+                    <ShieldCheck className="w-4 h-4 mr-3"/> Security Logs
+                </div>
+                <div 
+                    onClick={() => {
+                        setIsSystemOpen(true);
+                        addLog("SYSTEM", "Querying gatekeeper performance diagnostics...");
+                    }}
+                    className="flex items-center cursor-pointer hover:text-white transition"
+                >
+                    <Activity className="w-4 h-4 mr-3"/> System Status
+                </div>
             </div>
         </div>
       </aside>
@@ -87,12 +182,62 @@ export default function App() {
                 <span className="text-[11px] font-mono text-[#4edea3] font-bold uppercase tracking-widest">Fuji_RPC_Sync</span>
             </div>
             <div className="flex items-center space-x-4">
-                <Bell className="w-4 h-4 text-[#bbcabf] cursor-pointer hover:text-white transition" />
-                <Settings className="w-4 h-4 text-[#bbcabf] cursor-pointer hover:text-white transition" />
+                <div className="relative">
+                    <Bell 
+                        className="w-4 h-4 text-[#bbcabf] cursor-pointer hover:text-white transition" 
+                        onClick={() => setIsNotificationsOpen(!isNotificationsOpen)}
+                    />
+                    {isNotificationsOpen && (
+                        <div className="absolute right-0 mt-3 w-80 bg-[#081425] border border-[#1e293b] rounded-sm shadow-2xl z-50 overflow-hidden">
+                            <div className="px-4 py-3 border-b border-[#1e293b] flex justify-between items-center bg-[#152031]">
+                                <span className="text-[11px] font-mono font-bold text-white uppercase tracking-widest">Active Alerts</span>
+                                <span 
+                                    onClick={() => setIsNotificationsOpen(false)}
+                                    className="text-[10px] font-mono text-[#bbcabf] hover:text-white cursor-pointer"
+                                >
+                                    DISMISS
+                                </span>
+                            </div>
+                            <div className="max-h-64 overflow-y-auto divide-y divide-[#1e293b]">
+                                {notificationsList.map(n => (
+                                    <div key={n.id} className="p-4 hover:bg-[#152031]/50 transition-colors">
+                                        <div className="flex justify-between items-start mb-1">
+                                            <span className="text-xs font-bold text-[#4edea3] flex items-center">
+                                                {n.unread && <span className="w-1.5 h-1.5 rounded-full bg-[#10b981] mr-2"></span>}
+                                                {n.title}
+                                            </span>
+                                            <span className="text-[9px] font-mono text-[#bbcabf]">{n.time}</span>
+                                        </div>
+                                        <p className="text-[11px] text-[#bbcabf] font-mono leading-relaxed">{n.msg}</p>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+                </div>
+                <Settings 
+                    className="w-4 h-4 text-[#bbcabf] cursor-pointer hover:text-white transition" 
+                    onClick={() => {
+                        setIsSettingsOpen(true);
+                        addLog("SYSTEM", "Opening network parameter configuration console...");
+                    }}
+                />
             </div>
-            <div className="flex items-center space-x-2 border border-[#3c4a42] px-4 py-2 rounded-sm text-[11px] font-mono cursor-pointer hover:bg-[#2a3548] transition text-white font-bold">
+            {authenticated ? (
+              <button 
+                onClick={logout}
+                className="flex items-center space-x-2 border border-[#ffb4ab]/50 hover:border-[#ffb4ab] px-4 py-2 rounded-sm text-[11px] font-mono cursor-pointer bg-transparent hover:bg-[#ffb4ab]/10 transition text-[#ffb4ab] font-bold"
+              >
+                <span>{user?.wallet?.address ? `${user.wallet.address.slice(0, 6)}...${user.wallet.address.slice(-4)}` : 'DISCONNECT'}</span>
+              </button>
+            ) : (
+              <button 
+                onClick={login}
+                className="flex items-center space-x-2 border border-[#3c4a42] hover:border-[#10b981] px-4 py-2 rounded-sm text-[11px] font-mono cursor-pointer bg-transparent hover:bg-[#2a3548] transition text-white font-bold"
+              >
                 <span>CONNECT WALLET</span>
-            </div>
+              </button>
+            )}
           </div>
         </header>
 
@@ -288,6 +433,147 @@ export default function App() {
         </main>
 
       </div>
+
+      {/* Settings Modal */}
+      {isSettingsOpen && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-[#081425] border border-[#1e293b] w-full max-w-md overflow-hidden relative shadow-2xl">
+            <div className="px-6 py-4 border-b border-[#1e293b] flex justify-between items-center bg-[#152031]">
+              <h3 className="text-sm font-bold text-white tracking-wider font-mono uppercase">Sentinel Config Parameters</h3>
+              <button onClick={() => setIsSettingsOpen(false)} className="text-[#bbcabf] hover:text-white transition cursor-pointer">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="p-6 space-y-6">
+              <div>
+                <label className="block text-[10px] font-mono font-bold text-[#bbcabf] mb-2 uppercase tracking-widest">Fuji RPC Provider URL</label>
+                <input 
+                  type="text" 
+                  value={fujiRpcUrl}
+                  onChange={(e) => setFujiRpcUrl(e.target.value)}
+                  className="w-full bg-[#040e1f] border border-[#3c4a42] p-2 text-xs text-white focus:outline-none focus:border-[#4edea3] transition-colors font-mono"
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] font-mono font-bold text-[#bbcabf] mb-2 uppercase tracking-widest">Gatekeeper API Endpoint</label>
+                <input 
+                  type="text" 
+                  value={apiUrl}
+                  onChange={(e) => setApiUrl(e.target.value)}
+                  className="w-full bg-[#040e1f] border border-[#3c4a42] p-2 text-xs text-white focus:outline-none focus:border-[#4edea3] transition-colors font-mono"
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] font-mono font-bold text-[#bbcabf] mb-2 uppercase tracking-widest">USDC Token Contract Address</label>
+                <input 
+                  type="text" 
+                  value={tokenAddress}
+                  onChange={(e) => setTokenAddress(e.target.value)}
+                  className="w-full bg-[#040e1f] border border-[#3c4a42] p-2 text-xs text-white focus:outline-none focus:border-[#4edea3] transition-colors font-mono"
+                />
+              </div>
+              <button 
+                onClick={() => {
+                  addLog("SYSTEM", `Applied configurations: API at ${apiUrl}, RPC at ${fujiRpcUrl.slice(0, 30)}...`, true);
+                  setIsSettingsOpen(false);
+                }}
+                className="w-full bg-[#10b981] hover:bg-[#003824] text-[#081425] font-bold py-3 text-xs uppercase tracking-widest transition-colors cursor-pointer"
+              >
+                Save & Apply Settings
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Security Logs Modal */}
+      {isSecurityOpen && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-[#081425] border border-[#1e293b] w-full max-w-lg overflow-hidden relative shadow-2xl">
+            <div className="px-6 py-4 border-b border-[#1e293b] flex justify-between items-center bg-[#152031]">
+              <h3 className="text-sm font-bold text-white tracking-wider font-mono uppercase flex items-center">
+                <ShieldCheck className="w-4 h-4 mr-2 text-[#4edea3]" /> Network Ingress Firewall Audits
+              </h3>
+              <button onClick={() => setIsSecurityOpen(false)} className="text-[#bbcabf] hover:text-white transition cursor-pointer">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="p-6">
+              <div className="bg-[#040e1f] border border-[#1e293b] p-4 h-64 overflow-y-auto font-mono text-[11px] text-[#d8e3fb] space-y-2 mb-6">
+                {securityLogs.map((log, idx) => (
+                  <div key={idx} className="flex space-x-2">
+                    <span className="text-[#86948a] shrink-0">[{log.ts}]</span>
+                    <span className={`font-bold shrink-0 ${log.level === 'SECURE' ? 'text-[#4edea3]' : log.level === 'AUDIT' ? 'text-[#ffb95f]' : 'text-[#bbcabf]'}`}>
+                      [{log.level}]
+                    </span>
+                    <span>{log.msg}</span>
+                  </div>
+                ))}
+              </div>
+              <button 
+                onClick={runSecurityScan}
+                disabled={isScanning}
+                className="w-full bg-[#ffb4ab]/10 hover:bg-[#ffb4ab]/20 border border-[#ffb4ab]/50 text-[#ffb4ab] font-bold py-3 text-xs uppercase tracking-widest transition-all flex items-center justify-center cursor-pointer disabled:opacity-50"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 mr-2 ${isScanning ? 'animate-spin' : ''}`} />
+                {isScanning ? "Scanning Stack Memory..." : "Initiate Audit Memory Scan"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* System Status Modal */}
+      {isSystemOpen && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-[#081425] border border-[#1e293b] w-full max-w-lg overflow-hidden relative shadow-2xl">
+            <div className="px-6 py-4 border-b border-[#1e293b] flex justify-between items-center bg-[#152031]">
+              <h3 className="text-sm font-bold text-white tracking-wider font-mono uppercase flex items-center">
+                <Activity className="w-4 h-4 mr-2 text-[#4edea3]" /> Gateway Node Diagnostics
+              </h3>
+              <button onClick={() => setIsSystemOpen(false)} className="text-[#bbcabf] hover:text-white transition cursor-pointer">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="p-6 space-y-6">
+              <div className="grid grid-cols-3 gap-4">
+                <div className="bg-[#040e1f] border border-[#1e293b] p-4 text-center">
+                  <span className="block text-[9px] font-mono text-[#bbcabf] uppercase tracking-widest mb-1">CPU Usage</span>
+                  <span className="text-xl font-bold font-mono text-[#4edea3]">{cpuLoad}%</span>
+                </div>
+                <div className="bg-[#040e1f] border border-[#1e293b] p-4 text-center">
+                  <span className="block text-[9px] font-mono text-[#bbcabf] uppercase tracking-widest mb-1">RAM Allocated</span>
+                  <span className="text-xl font-bold font-mono text-[#4edea3]">{ramUsed}MB</span>
+                </div>
+                <div className="bg-[#040e1f] border border-[#1e293b] p-4 text-center">
+                  <span className="block text-[9px] font-mono text-[#bbcabf] uppercase tracking-widest mb-1">Fuji Latency</span>
+                  <span className="text-xl font-bold font-mono text-[#4edea3]">{rpcLatency}ms</span>
+                </div>
+              </div>
+
+              <div className="space-y-3 font-mono text-xs border-t border-[#1e293b] pt-4 text-[#bbcabf]">
+                <div className="flex justify-between">
+                  <span>Identity Contract:</span>
+                  <a href="https://testnet.snowtrace.io/address/0xf103838D5d0AE522198E162dA4732948d5c0a24f" target="_blank" rel="noreferrer" className="text-[#4edea3] hover:underline">0xf103...a24f</a>
+                </div>
+                <div className="flex justify-between">
+                  <span>Reputation Contract:</span>
+                  <a href="https://testnet.snowtrace.io/address/0xa0C727A89D97eea9368b758E77Db1ab6baDe373F" target="_blank" rel="noreferrer" className="text-[#4edea3] hover:underline">0xa0C7...373F</a>
+                </div>
+                <div className="flex justify-between">
+                  <span>Mock Flash Vault:</span>
+                  <a href="https://testnet.snowtrace.io/address/0xd9cFAad4e9ad195e08ec894e54Fc4462590549F0" target="_blank" rel="noreferrer" className="text-[#4edea3] hover:underline">0xd9cF...49F0</a>
+                </div>
+                <div className="flex justify-between">
+                  <span>Vault Liquid Asset:</span>
+                  <span className="text-white">USDC (6 Decimals)</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }

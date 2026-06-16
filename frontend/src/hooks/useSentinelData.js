@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { ethers } from 'ethers';
+import { useWallets } from '@privy-io/react-auth';
 import contractAddresses from '../addresses.json';
 
 const INT_IDENTITY_ABI = [
@@ -20,7 +21,7 @@ const ERC20_ABI = [
 ];
 
 const USDC_FUJI_ADDRESS = "0x5425890298aed601595a70AB815c96711a31Bc65";
-const API_URL = "http://localhost:4020/api/v1";
+const API_URL = import.meta.env.VITE_API_URL || "http://localhost:4020/api/v1";
 
 export function useSentinelData() {
   const [agents, setAgents] = useState([]);
@@ -28,6 +29,7 @@ export function useSentinelData() {
   const [liveBlocks, setLiveBlocks] = useState(0);
   const [eventsFeed, setEventsFeed] = useState([]);
   const [loading, setLoading] = useState(true);
+  const { wallets } = useWallets();
 
   useEffect(() => {
     const providerUrl = import.meta.env.VITE_FUJI_RPC_URL || 'https://api.avax-test.network/ext/bc/C/rpc';
@@ -159,8 +161,10 @@ export function useSentinelData() {
   }, []);
 
   const executeAdminSlash = async (agentId, targetsScore) => {
-    if (!window.ethereum) throw new Error("No web3 browser injector located");
-    const browserProvider = new ethers.BrowserProvider(window.ethereum);
+    if (wallets.length === 0) throw new Error("No wallet connected. Please connect your wallet via Privy first.");
+    const activeWallet = wallets[0];
+    const eip1193Provider = await activeWallet.getEthereumProvider();
+    const browserProvider = new ethers.BrowserProvider(eip1193Provider);
     const signer = await browserProvider.getSigner();
     const writeInstance = new ethers.Contract(contractAddresses.reputationRegistry, INT_REPUTATION_ABI, signer);
 
@@ -172,5 +176,14 @@ export function useSentinelData() {
     return tx.hash;
   };
 
-  return { agents, vaultBalance, liveBlocks, eventsFeed, loading, executeAdminSlash };
+  const addLog = (type, msg, isSuccess = false) => {
+    setEventsFeed(prev => [{
+      time: new Date().toLocaleTimeString(),
+      type,
+      msg,
+      isSuccess
+    }, ...prev].slice(0, 50));
+  };
+
+  return { agents, vaultBalance, liveBlocks, eventsFeed, loading, executeAdminSlash, addLog };
 }

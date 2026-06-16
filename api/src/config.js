@@ -36,6 +36,7 @@ export function loadConfig(overrides = {}) {
   const here = path.dirname(fileURLToPath(import.meta.url));
   loadDotEnvFile(path.resolve(process.cwd(), ".env"));
   loadDotEnvFile(path.resolve(here, "../.env"));
+  loadDotEnvFile(path.resolve(here, "../../.env"));
 
   let deployed = {};
   try {
