@@ -127,6 +127,21 @@ export default function App() {
     }
   };
 
+  const handleSwitchToFuji = async () => {
+    if (wallets.length === 0) {
+      addLog("SYSTEM", "Cannot switch chain: No wallet connected. Logging in...");
+      login();
+      return;
+    }
+    try {
+      const activeWallet = wallets[0];
+      await activeWallet.switchChain(43113);
+      addLog("SYSTEM", "Chain switch requested. Awaiting user approval in wallet...", true);
+    } catch (err) {
+      addLog("SYSTEM", `Network switch rejected: ${err.message}`, false);
+    }
+  };
+
   const handleSendMessage = async (e) => {
     e.preventDefault();
     if (!chatInput.trim()) return;
@@ -337,9 +352,12 @@ Keep your explanations concise and friendly.`;
              AVAX SENTINEL
           </div>
           <div className="flex items-center space-x-6">
-            <div className="flex items-center space-x-2 bg-[#152031] px-3 py-1.5 rounded-sm border border-[#3c4a42]">
+            <div 
+              onClick={handleSwitchToFuji}
+              className="flex items-center space-x-2 bg-[#152031] hover:bg-[#2a3548] px-3 py-1.5 rounded-sm border border-[#3c4a42] cursor-pointer transition text-[#4edea3]"
+            >
                 <div className="w-1.5 h-1.5 rounded-full bg-[#4edea3] animate-pulse"></div>
-                <span className="text-[11px] font-mono text-[#4edea3] font-bold uppercase tracking-widest">Fuji_RPC_Sync</span>
+                <span className="text-[11px] font-mono font-bold uppercase tracking-widest">Fuji_RPC_Sync</span>
             </div>
             <div className="flex items-center space-x-4">
                 <div className="relative">

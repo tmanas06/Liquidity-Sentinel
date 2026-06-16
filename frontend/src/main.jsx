@@ -4,6 +4,28 @@ import { PrivyProvider } from '@privy-io/react-auth'
 import './index.css'
 import App from './App.jsx'
 
+const avalancheFuji = {
+  id: 43113,
+  name: 'Avalanche Fuji C-Chain',
+  network: 'avalanche-fuji',
+  nativeCurrency: {
+    decimals: 18,
+    name: 'Avalanche',
+    symbol: 'AVAX',
+  },
+  rpcUrls: {
+    default: {
+      http: ['https://api.avax-test.network/ext/bc/C/rpc'],
+    },
+    public: {
+      http: ['https://api.avax-test.network/ext/bc/C/rpc'],
+    },
+  },
+  blockExplorers: {
+    default: { name: 'SnowTrace', url: 'https://testnet.snowtrace.io' },
+  },
+};
+
 createRoot(document.getElementById('root')).render(
   <StrictMode>
     <PrivyProvider
@@ -15,6 +37,8 @@ createRoot(document.getElementById('root')).render(
           accentColor: '#10b981',
           showWalletLoginFirst: true,
         },
+        defaultChain: avalancheFuji,
+        supportedChains: [avalancheFuji],
       }}
     >
       <App />
