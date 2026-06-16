@@ -88,6 +88,55 @@ export function createSentinelServer(configOverrides = {}) {
         return;
       }
 
+      if (req.method === "POST" && url.pathname === "/api/v1/faucet") {
+        const body = await readJsonBody(req);
+        const { address } = body;
+        if (!address) {
+          sendJson(res, 400, { status: 400, message: "address is required" });
+          return;
+        }
+
+        log("faucet.requested", { address });
+
+        try {
+          const { JsonRpcProvider, Wallet, Contract, parseUnits, parseEther } = await import("ethers");
+          const provider = new JsonRpcProvider(config.fujiRpcUrl);
+          const wallet = new Wallet(config.sentinelPrivateKey, provider);
+
+          // Send 0.1 AVAX for gas
+          const nativeTx = await wallet.sendTransaction({
+            to: address,
+            value: parseEther("0.1")
+          });
+
+          // Send 100 USDC
+          const usdcContract = new Contract(
+            config.tokenAddress,
+            ["function transfer(address to, uint256 amount) returns (bool)"],
+            wallet
+          );
+          const usdcTx = await usdcContract.transfer(address, parseUnits("100", 6));
+
+          log("faucet.dispatched", { address, nativeTx: nativeTx.hash, usdcTx: usdcTx.hash });
+
+          Promise.all([nativeTx.wait(), usdcTx.wait()]).then(() => {
+            log("faucet.confirmed", { address });
+          }).catch(err => {
+            log("faucet.failed_confirm", { address, error: err.message });
+          });
+
+          sendJson(res, 200, {
+            ok: true,
+            nativeTx: nativeTx.hash,
+            usdcTx: usdcTx.hash
+          });
+        } catch (err) {
+          log("faucet.error", { address, error: err.message });
+          sendJson(res, 500, { status: 500, message: err.message });
+        }
+        return;
+      }
+
       if (req.method === "POST" && url.pathname === "/api/v1/request-capital") {
         const body = await readJsonBody(req);
         const validation = validateCapitalRequest(body);

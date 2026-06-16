@@ -26,7 +26,21 @@ export default function App() {
   const [scoreInput, setScoreInput] = useState('');
   const [isSlasherPending, setIsSlasherPending] = useState(false);
   const [isInitializing, setIsInitializing] = useState(false);
-  const [activeTab, setActiveTab] = useState('billing');
+  const [activeTab, setActiveTab] = useState('hub');
+
+  // Speedrun Playground States
+  const [userAvaxBalance, setUserAvaxBalance] = useState("0");
+  const [userUsdcBalance, setUserUsdcBalance] = useState("0");
+  const [registeredAgentId, setRegisteredAgentId] = useState("");
+  const [isMintingAgent, setIsMintingAgent] = useState(false);
+  const [isRefilling, setIsRefilling] = useState(false);
+  const [isFauceting, setIsFauceting] = useState(false);
+  const [agentDomainInput, setAgentDomainInput] = useState("operator.sentinel.test");
+  const [isNodeOnline, setIsNodeOnline] = useState(false);
+  const [activeInvoice, setActiveInvoice] = useState(null);
+  const [x402Status, setX402Status] = useState("idle"); // idle | challenge | paying | verifying | success | failed
+  const [unlockedPayload, setUnlockedPayload] = useState(null);
+  const [x402Error, setX402Error] = useState("");
 
   // Interactive Popup States
   const [isSecurityOpen, setIsSecurityOpen] = useState(false);
@@ -92,6 +106,309 @@ export default function App() {
       ]);
       addLog("SECURITY", "Node memory stack audited. Security state: CLEAR.", true);
     }, 1500);
+  };
+
+  const fetchUserBalancesAndAgent = async () => {
+    if (!authenticated || wallets.length === 0) return;
+    try {
+      const activeWallet = wallets[0];
+      const providerUrl = fujiRpcUrl || 'https://api.avax-test.network/ext/bc/C/rpc';
+      const provider = new ethers.JsonRpcProvider(providerUrl);
+      
+      // Get AVAX Balance
+      const avax = await provider.getBalance(activeWallet.address);
+      setUserAvaxBalance(Number(ethers.formatEther(avax)).toFixed(4));
+
+      // Get USDC Balance
+      const usdcContract = new ethers.Contract(
+        tokenAddress,
+        ["function balanceOf(address account) external view returns (uint256)"],
+        provider
+      );
+      const usdc = await usdcContract.balanceOf(activeWallet.address);
+      setUserUsdcBalance(Number(ethers.formatUnits(usdc, 6)).toFixed(2));
+
+      // Check identity registry for this wallet
+      const identityContract = new ethers.Contract(
+        contractAddresses.identityRegistry,
+        ["function resolveAgentByAddress(address agentAddress) external view returns (uint256 agentId, string memory agentDomain, address agentAddress_)"],
+        provider
+      );
+      const agentInfo = await identityContract.resolveAgentByAddress(activeWallet.address);
+      if (agentInfo && agentInfo[0] !== 0n) {
+        setRegisteredAgentId(agentInfo[0].toString());
+      } else {
+        setRegisteredAgentId("");
+      }
+    } catch (err) {
+      console.error("Failed to fetch user balances / agent:", err);
+    }
+  };
+
+  useEffect(() => {
+    if (authenticated) {
+      fetchUserBalancesAndAgent();
+    } else {
+      setUserAvaxBalance("0");
+      setUserUsdcBalance("0");
+      setRegisteredAgentId("");
+    }
+  }, [authenticated, wallets, liveBlocks]);
+
+  useEffect(() => {
+    const checkNode = async () => {
+      try {
+        const res = await fetch("http://localhost:4020/health");
+        if (res.ok) {
+          setIsNodeOnline(true);
+        } else {
+          setIsNodeOnline(false);
+        }
+      } catch (err) {
+        setIsNodeOnline(false);
+      }
+    };
+    checkNode();
+    const nodeInterval = setInterval(checkNode, 5000);
+    return () => clearInterval(nodeInterval);
+  }, []);
+
+  const handleRequestFaucet = async () => {
+    if (!authenticated || wallets.length === 0) return;
+    setIsFauceting(true);
+    addLog("SYSTEM", "Requesting AVAX and USDC from local faucet endpoint...");
+    try {
+      const activeWallet = wallets[0];
+      const res = await fetch(`${apiUrl}/faucet`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ address: activeWallet.address })
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.message || "Failed to claim faucet");
+      }
+      const data = await res.json();
+      addLog("SYSTEM", `Faucet dispatched! Gas Tx: ${data.nativeTx.slice(0, 8)}..., USDC Tx: ${data.usdcTx.slice(0, 8)}...`, true);
+      alert("Faucet funds requested successfully! Awaiting blockchain confirmation...");
+      fetchUserBalancesAndAgent();
+    } catch (err) {
+      addLog("SYSTEM", `Faucet request failed: ${err.message}`, false);
+      alert(`Faucet failed: ${err.message}`);
+    } finally {
+      setIsFauceting(false);
+    }
+  };
+
+  const handleRegisterAgent = async (e) => {
+    e.preventDefault();
+    if (!authenticated || wallets.length === 0) {
+      alert("Please connect your wallet first.");
+      return;
+    }
+    if (!agentDomainInput.trim()) {
+      alert("Please specify a domain.");
+      return;
+    }
+    setIsMintingAgent(true);
+    addLog("SYSTEM", `Initiating ERC-8004 Agent identity registration for '${agentDomainInput}'...`);
+    try {
+      const activeWallet = wallets[0];
+      const eip1193Provider = await activeWallet.getEthereumProvider();
+      const browserProvider = new ethers.BrowserProvider(eip1193Provider);
+      const signer = await browserProvider.getSigner();
+      
+      const identityContract = new ethers.Contract(
+        contractAddresses.identityRegistry,
+        ["function newAgent(string calldata agentDomain, address agentAddress) external returns (uint256)"],
+        signer
+      );
+
+      const tx = await identityContract.newAgent(agentDomainInput.trim(), activeWallet.address);
+      addLog("SYSTEM", `Agent registration tx broadcasted: ${tx.hash.slice(0, 10)}... Awaiting mining.`);
+      await tx.wait();
+      addLog("SYSTEM", `ERC-8004 Agent successfully registered!`, true);
+      alert(`Agent registration confirmed on-chain!`);
+      fetchUserBalancesAndAgent();
+    } catch (err) {
+      addLog("SYSTEM", `Registration failed: ${err.message}`, false);
+      alert(`Registration failed: ${err.message}`);
+    } finally {
+      setIsMintingAgent(false);
+    }
+  };
+
+  const handleRefillVault = async () => {
+    if (!authenticated || wallets.length === 0) return;
+    setIsRefilling(true);
+    addLog("SYSTEM", "Sending 10.00 USDC to Mock Vault reserves...");
+    try {
+      const activeWallet = wallets[0];
+      const eip1193Provider = await activeWallet.getEthereumProvider();
+      const browserProvider = new ethers.BrowserProvider(eip1193Provider);
+      const signer = await browserProvider.getSigner();
+
+      const usdcContract = new ethers.Contract(
+        tokenAddress,
+        ["function transfer(address to, uint256 amount) returns (bool)"],
+        signer
+      );
+
+      const amount = ethers.parseUnits("10", 6);
+      const tx = await usdcContract.transfer(contractAddresses.mockVault, amount);
+      addLog("SYSTEM", `Vault deposit broadcasted: ${tx.hash.slice(0, 10)}...`);
+      await tx.wait();
+      addLog("SYSTEM", "Successfully deposited 10 USDC into Mock Vault!", true);
+      alert("Successfully deposited 10 USDC!");
+      fetchUserBalancesAndAgent();
+    } catch (err) {
+      addLog("SYSTEM", `Vault deposit failed: ${err.message}`, false);
+      alert(`Deposit failed: ${err.message}`);
+    } finally {
+      setIsRefilling(false);
+    }
+  };
+
+  const handleTriggerX402Request = async () => {
+    if (!registeredAgentId) {
+      alert("Please register an Agent NFT first.");
+      return;
+    }
+    setX402Status("requesting");
+    setX402Error("");
+    setUnlockedPayload(null);
+    addLog("SYSTEM", `Requesting lease capital from gatekeeper for Agent ID ${registeredAgentId}...`);
+    try {
+      const res = await fetch(`${apiUrl}/request-capital`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          agentId: registeredAgentId,
+          capitalAmount: "5000000", // 5.00 USDC
+          asset: "USDC",
+          strategyHint: "playground-arb"
+        })
+      });
+
+      if (res.status === 402) {
+        const data = await res.json();
+        setActiveInvoice(data.invoice);
+        setX402Status("challenge");
+        addLog("SYSTEM", `Gatekeeper issued x402 payment challenge! Invoice: ${data.invoice.requestId.slice(-6)}`);
+      } else {
+        const data = await res.json();
+        throw new Error(data.message || `Unexpected response status ${res.status}`);
+      }
+    } catch (err) {
+      setX402Status("failed");
+      setX402Error(err.message);
+      addLog("SYSTEM", `Capital request failed: ${err.message}`, false);
+    }
+  };
+
+  const handlePayInvoiceOnChain = async () => {
+    if (!activeInvoice || wallets.length === 0) return;
+    setX402Status("paying");
+    addLog("SYSTEM", `Initiating on-chain EIP-402 challenge payment of ${ethers.formatUnits(activeInvoice.amount, 6)} USDC...`);
+    try {
+      const activeWallet = wallets[0];
+      const eip1193Provider = await activeWallet.getEthereumProvider();
+      const browserProvider = new ethers.BrowserProvider(eip1193Provider);
+      const signer = await browserProvider.getSigner();
+
+      const usdcContract = new ethers.Contract(
+        activeInvoice.token,
+        ["function transfer(address to, uint256 amount) returns (bool)"],
+        signer
+      );
+
+      const tx = await usdcContract.transfer(activeInvoice.destination, BigInt(activeInvoice.amount));
+      addLog("SYSTEM", `Payment transaction broadcasted: ${tx.hash.slice(0, 10)}... Awaiting confirmation.`);
+      await tx.wait();
+      
+      addLog("SYSTEM", `Payment confirmed! Submitting verification hash to gatekeeper...`);
+      setX402Status("verifying");
+
+      const b64Payment = btoa(tx.hash);
+      const res = await fetch(`${apiUrl}/request-capital`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-request-id": activeInvoice.requestId,
+          "x-payment": b64Payment
+        },
+        body: JSON.stringify({
+          agentId: activeInvoice.agentId,
+          capitalAmount: "5000000",
+          asset: "USDC",
+          strategyHint: "playground-arb"
+        })
+      });
+
+      const data = await res.json();
+      if (res.status === 200) {
+        setX402Status("success");
+        setUnlockedPayload(data);
+        addLog("SYSTEM", `EIP-402 Challenge resolved! Capital Lease Permission Granted.`, true);
+      } else {
+        throw new Error(data.message || data.reason || `Verification returned status ${res.status}`);
+      }
+    } catch (err) {
+      setX402Status("challenge");
+      setX402Error(err.message);
+      addLog("SYSTEM", `Payment verification failed: ${err.message}`, false);
+    }
+  };
+
+  const handlePayInvoiceMock = async () => {
+    if (!activeInvoice) return;
+    setX402Status("verifying");
+    addLog("SYSTEM", "Simulating offline mock signature fingerprint...");
+    try {
+      const fingerprint = [
+        activeInvoice.requestId,
+        activeInvoice.agentId,
+        activeInvoice.amount,
+        activeInvoice.destination.toLowerCase(),
+        activeInvoice.token.toLowerCase()
+      ].join(":");
+
+      const msgBuffer = new TextEncoder().encode(fingerprint);
+      const hashBuffer = await window.crypto.subtle.digest('SHA-256', msgBuffer);
+      const hashArray = Array.from(new Uint8Array(hashBuffer));
+      const mockHash = '0x' + hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+
+      addLog("SYSTEM", `Computed local mock fingerprint hash: ${mockHash.slice(0, 10)}...`);
+
+      const b64Payment = btoa(mockHash);
+      const res = await fetch(`${apiUrl}/request-capital`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-request-id": activeInvoice.requestId,
+          "x-payment": b64Payment
+        },
+        body: JSON.stringify({
+          agentId: activeInvoice.agentId,
+          capitalAmount: "5000000",
+          asset: "USDC",
+          strategyHint: "playground-arb"
+        })
+      });
+
+      const data = await res.json();
+      if (res.status === 200) {
+        setX402Status("success");
+        setUnlockedPayload(data);
+        addLog("SYSTEM", `EIP-402 Challenge resolved! Capital Lease Permission Granted (Simulated).`, true);
+      } else {
+        throw new Error(data.message || data.reason || `Verification returned status ${res.status}`);
+      }
+    } catch (err) {
+      setX402Status("challenge");
+      setX402Error(err.message + " (Hint: Make sure PAYMENT_MODE=mock in settings or .env if simulating)");
+      addLog("SYSTEM", `Simulated verification failed: ${err.message}`, false);
+    }
   };
 
   const handleInitializeNode = async () => {
@@ -423,6 +740,207 @@ Keep your explanations concise and friendly.`;
         <main className="flex-1 p-8 overflow-y-auto">
             {activeTab === 'hub' && (
                 <div className="space-y-6 max-w-7xl mx-auto">
+                    
+                    {/* Sentinel Speedrun & Playground Guide */}
+                    <div className="bg-[#081425] border border-[#1e293b] p-6 relative overflow-hidden">
+                        <div className="absolute top-0 right-0 w-64 h-64 bg-[#10b981] opacity-[0.02] rounded-full blur-3xl pointer-events-none"></div>
+                        <div className="flex justify-between items-center mb-6">
+                            <div>
+                                <h2 className="text-lg font-bold text-white flex items-center">
+                                    <ShieldCheck className="w-5 h-5 text-[#4edea3] mr-2" />
+                                    Sentinel Developer Speedrun Guide
+                                </h2>
+                                <p className="text-xs text-[#bbcabf] mt-1">
+                                    Walk through the complete EIP-8004 identity registration and EIP-402 billing loop.
+                                </p>
+                            </div>
+                            {authenticated && (
+                                <div className="text-right text-xs font-mono text-[#bbcabf]">
+                                    <div className="text-white font-bold">{user?.wallet?.address?.slice(0, 8)}...</div>
+                                    <div className="mt-1 flex items-center justify-end space-x-3">
+                                        <span>AVAX: <strong className="text-[#4edea3]">{userAvaxBalance}</strong></span>
+                                        <span>USDC: <strong className="text-[#4edea3]">{userUsdcBalance}</strong></span>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4">
+                            {/* Step 1: Initialize Node */}
+                            <div className={`p-4 border rounded-sm flex flex-col justify-between h-36 transition ${
+                                isNodeOnline ? 'bg-[#10b981]/5 border-[#10b981]/30' : 'bg-[#040e1f] border-[#3c4a42]'
+                            }`}>
+                                <div>
+                                    <div className="flex justify-between items-center mb-2">
+                                        <span className="text-[10px] font-mono font-bold text-slate-500 uppercase">Step 1</span>
+                                        {isNodeOnline ? (
+                                            <span className="text-[9px] font-mono bg-[#10b981]/15 text-[#4edea3] px-1.5 py-0.5 rounded font-bold">ONLINE</span>
+                                        ) : (
+                                            <span className="text-[9px] font-mono bg-[#ffb4ab]/15 text-[#ffb4ab] px-1.5 py-0.5 rounded font-bold">OFFLINE</span>
+                                        )}
+                                    </div>
+                                    <h3 className="text-xs font-bold text-white">Node Health</h3>
+                                    <p className="text-[10px] text-[#bbcabf] mt-1 font-mono leading-snug">Verify port 4020 gateway is active.</p>
+                                </div>
+                                <button
+                                    onClick={handleInitializeNode}
+                                    disabled={isInitializing}
+                                    className="w-full bg-[#152031] hover:bg-[#2a3548] text-white font-mono text-[10px] py-1.5 rounded-sm border border-[#3c4a42] uppercase tracking-wider transition disabled:opacity-50 cursor-pointer"
+                                >
+                                    {isInitializing ? "Checking..." : "Verify Connection"}
+                                </button>
+                            </div>
+
+                            {/* Step 2: Connect Wallet */}
+                            <div className={`p-4 border rounded-sm flex flex-col justify-between h-36 transition ${
+                                authenticated ? 'bg-[#10b981]/5 border-[#10b981]/30' : 'bg-[#040e1f] border-[#3c4a42]'
+                            }`}>
+                                <div>
+                                    <div className="flex justify-between items-center mb-2">
+                                        <span className="text-[10px] font-mono font-bold text-slate-500 uppercase">Step 2</span>
+                                        {authenticated ? (
+                                            <span className="text-[9px] font-mono bg-[#10b981]/15 text-[#4edea3] px-1.5 py-0.5 rounded font-bold">CONNECTED</span>
+                                        ) : (
+                                            <span className="text-[9px] font-mono bg-amber-500/15 text-amber-400 px-1.5 py-0.5 rounded font-bold">PENDING</span>
+                                        )}
+                                    </div>
+                                    <h3 className="text-xs font-bold text-white">Auth Wallet</h3>
+                                    <p className="text-[10px] text-[#bbcabf] mt-1 font-mono leading-snug">Authenticate operator wallet via Privy.</p>
+                                </div>
+                                {!authenticated ? (
+                                    <button
+                                        onClick={login}
+                                        className="w-full bg-[#10b981] hover:bg-[#003824] text-[#081425] font-mono text-[10px] font-bold py-1.5 rounded-sm uppercase tracking-wider transition cursor-pointer"
+                                    >
+                                        Connect
+                                    </button>
+                                ) : (
+                                    <button
+                                        onClick={logout}
+                                        className="w-full bg-[#ffb4ab]/10 hover:bg-[#ffb4ab]/20 text-[#ffb4ab] border border-[#ffb4ab]/50 font-mono text-[10px] py-1.5 rounded-sm uppercase tracking-wider transition cursor-pointer"
+                                    >
+                                        Disconnect
+                                    </button>
+                                )}
+                            </div>
+
+                            {/* Step 3: Faucet */}
+                            <div className={`p-4 border rounded-sm flex flex-col justify-between h-36 transition ${
+                                Number(userAvaxBalance) > 0.05 ? 'bg-[#10b981]/5 border-[#10b981]/30' : 'bg-[#040e1f] border-[#3c4a42]'
+                            }`}>
+                                <div>
+                                    <div className="flex justify-between items-center mb-2">
+                                        <span className="text-[10px] font-mono font-bold text-slate-500 uppercase">Step 3</span>
+                                        {Number(userAvaxBalance) > 0.05 ? (
+                                            <span className="text-[9px] font-mono bg-[#10b981]/15 text-[#4edea3] px-1.5 py-0.5 rounded font-bold">FUNDED</span>
+                                        ) : (
+                                            <span className="text-[9px] font-mono bg-amber-500/15 text-amber-400 px-1.5 py-0.5 rounded font-bold">LOW GAS</span>
+                                        )}
+                                    </div>
+                                    <h3 className="text-xs font-bold text-white">Claim Faucet</h3>
+                                    <p className="text-[10px] text-[#bbcabf] mt-1 font-mono leading-snug">Get 0.1 AVAX & 100 USDC on Fuji.</p>
+                                </div>
+                                <button
+                                    onClick={handleRequestFaucet}
+                                    disabled={!authenticated || isFauceting}
+                                    className="w-full bg-[#152031] hover:bg-[#2a3548] text-white font-mono text-[10px] py-1.5 rounded-sm border border-[#3c4a42] uppercase tracking-wider transition disabled:opacity-50 cursor-pointer"
+                                >
+                                    {isFauceting ? "Claiming..." : "Claim Funds"}
+                                </button>
+                            </div>
+
+                            {/* Step 4: Register Agent */}
+                            <div className={`p-4 border rounded-sm flex flex-col justify-between h-36 transition ${
+                                registeredAgentId ? 'bg-[#10b981]/5 border-[#10b981]/30' : 'bg-[#040e1f] border-[#3c4a42]'
+                            }`}>
+                                <div>
+                                    <div className="flex justify-between items-center mb-2">
+                                        <span className="text-[10px] font-mono font-bold text-slate-500 uppercase">Step 4</span>
+                                        {registeredAgentId ? (
+                                            <span className="text-[9px] font-mono bg-[#10b981]/15 text-[#4edea3] px-1.5 py-0.5 rounded font-bold">ID: #{registeredAgentId}</span>
+                                        ) : (
+                                            <span className="text-[9px] font-mono bg-amber-500/15 text-amber-400 px-1.5 py-0.5 rounded font-bold">UNREG</span>
+                                        )}
+                                    </div>
+                                    <h3 className="text-xs font-bold text-white">Register Agent</h3>
+                                    <p className="text-[10px] text-[#bbcabf] mt-1 font-mono leading-snug">Mint EIP-8004 agent card on-chain.</p>
+                                </div>
+                                {!registeredAgentId ? (
+                                    <div className="space-y-1">
+                                        <input
+                                            type="text"
+                                            value={agentDomainInput}
+                                            onChange={(e) => setAgentDomainInput(e.target.value)}
+                                            placeholder="agent.domain"
+                                            className="w-full bg-[#081425] border border-[#3c4a42] text-[10px] font-mono px-1.5 py-0.5 text-white focus:outline-none focus:border-[#4edea3]"
+                                        />
+                                        <button
+                                            onClick={handleRegisterAgent}
+                                            disabled={!authenticated || isMintingAgent}
+                                            className="w-full bg-[#152031] hover:bg-[#2a3548] text-white font-mono text-[10px] py-1 rounded-sm border border-[#3c4a42] uppercase tracking-wider transition disabled:opacity-50 cursor-pointer"
+                                        >
+                                            {isMintingAgent ? "Minting..." : "Mint Card"}
+                                        </button>
+                                    </div>
+                                ) : (
+                                    <div className="text-[10px] font-mono text-center text-[#4edea3] font-bold border border-[#10b981]/20 py-1.5 bg-[#10b981]/5">
+                                        Minted & Active
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Step 5: Vault Deposits */}
+                            <div className={`p-4 border rounded-sm flex flex-col justify-between h-36 transition ${
+                                Number(vaultBalance) >= 10 ? 'bg-[#10b981]/5 border-[#10b981]/30' : 'bg-[#040e1f] border-[#3c4a42]'
+                            }`}>
+                                <div>
+                                    <div className="flex justify-between items-center mb-2">
+                                        <span className="text-[10px] font-mono font-bold text-slate-500 uppercase">Step 5</span>
+                                        {Number(vaultBalance) >= 10 ? (
+                                            <span className="text-[9px] font-mono bg-[#10b981]/15 text-[#4edea3] px-1.5 py-0.5 rounded font-bold">LIQUID</span>
+                                        ) : (
+                                            <span className="text-[9px] font-mono bg-amber-500/15 text-amber-400 px-1.5 py-0.5 rounded font-bold">EMPTY</span>
+                                        )}
+                                    </div>
+                                    <h3 className="text-xs font-bold text-white">Vault Reserves</h3>
+                                    <p className="text-[10px] text-[#bbcabf] mt-1 font-mono leading-snug">Provide Mock Vault liquidity reserves.</p>
+                                </div>
+                                <button
+                                    onClick={handleRefillVault}
+                                    disabled={!authenticated || isRefilling}
+                                    className="w-full bg-[#152031] hover:bg-[#2a3548] text-white font-mono text-[10px] py-1.5 rounded-sm border border-[#3c4a42] uppercase tracking-wider transition disabled:opacity-50 cursor-pointer"
+                                >
+                                    {isRefilling ? "Depositing..." : "Deposit 10 USDC"}
+                                </button>
+                            </div>
+
+                            {/* Step 6: Trigger Lease */}
+                            <div className={`p-4 border rounded-sm flex flex-col justify-between h-36 transition ${
+                                unlockedPayload ? 'bg-[#10b981]/5 border-[#10b981]/30' : 'bg-[#040e1f] border-[#3c4a42]'
+                            }`}>
+                                <div>
+                                    <div className="flex justify-between items-center mb-2">
+                                        <span className="text-[10px] font-mono font-bold text-slate-500 uppercase">Step 6</span>
+                                        {unlockedPayload ? (
+                                            <span className="text-[9px] font-mono bg-[#10b981]/15 text-[#4edea3] px-1.5 py-0.5 rounded font-bold">LEASED</span>
+                                        ) : (
+                                            <span className="text-[9px] font-mono bg-amber-500/15 text-amber-400 px-1.5 py-0.5 rounded font-bold">READY</span>
+                                        )}
+                                    </div>
+                                    <h3 className="text-xs font-bold text-white">Request Lease</h3>
+                                    <p className="text-[10px] text-[#bbcabf] mt-1 font-mono leading-snug">Simulate capital leasing handshake.</p>
+                                </div>
+                                <button
+                                    onClick={handleTriggerX402Request}
+                                    disabled={!registeredAgentId || x402Status === 'requesting'}
+                                    className="w-full bg-[#4edea3] hover:bg-[#10b981] text-[#081425] font-mono text-[10px] font-bold py-1.5 rounded-sm uppercase tracking-wider transition disabled:opacity-50 cursor-pointer"
+                                >
+                                    {x402Status === 'requesting' ? "Requesting..." : "Trigger Challenge"}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
                     <div className="grid grid-cols-3 gap-6">
                         <div className="col-span-2 bg-[#081425] border border-[#1e293b] p-6 relative overflow-hidden">
                              <div className="absolute top-0 right-0 w-64 h-64 bg-[#10b981] opacity-[0.03] rounded-full blur-3xl -mr-20 -mt-20 pointer-events-none"></div>
@@ -926,6 +1444,128 @@ Keep your explanations concise and friendly.`;
                   <span className="text-white">USDC (6 Decimals)</span>
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* x402 Payment Challenge Modal */}
+      {(x402Status === 'challenge' || x402Status === 'paying' || x402Status === 'verifying' || x402Status === 'success') && activeInvoice && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-[#081425] border border-[#1e293b] w-full max-w-xl overflow-hidden relative shadow-[0_0_50px_rgba(16,185,129,0.15)] my-8">
+            <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-[#10b981] via-[#4edea3] to-[#ffb95f]"></div>
+            
+            <div className="px-6 py-4 border-b border-[#1e293b] flex justify-between items-center bg-[#152031]">
+              <h3 className="text-sm font-bold text-white tracking-wider font-mono uppercase flex items-center">
+                <FileText className="w-4 h-4 mr-2 text-[#4edea3]" />
+                x402 protocol billing challenge
+              </h3>
+              <button 
+                onClick={() => {
+                  setX402Status("idle");
+                  setActiveInvoice(null);
+                  setUnlockedPayload(null);
+                }} 
+                className="text-[#bbcabf] hover:text-white transition cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-6">
+              {/* Challenge Overview */}
+              <div className="bg-[#040e1f] border border-[#1e293b] p-4 rounded-sm">
+                <div className="flex justify-between items-center mb-3">
+                  <span className="text-[10px] font-mono text-slate-500 uppercase font-bold">Challenge ID</span>
+                  <span className="text-xs font-mono text-[#4edea3] font-bold">{activeInvoice.requestId}</span>
+                </div>
+                <div className="grid grid-cols-2 gap-4 text-xs font-mono border-t border-[#1e293b]/50 pt-3">
+                  <div>
+                    <span className="text-[9px] uppercase text-slate-500 block mb-0.5">Agent Trust Score</span>
+                    <span className={`font-bold ${activeInvoice.reputationScore > 90 ? 'text-[#4edea3]' : 'text-amber-400'}`}>
+                      {activeInvoice.reputationScore}/100 ({activeInvoice.pricingTier === 'trusted-agent' ? 'Trusted Flow' : 'Standard Risk'})
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-[9px] uppercase text-slate-500 block mb-0.5">Required Lease Fee</span>
+                    <span className="text-white font-bold">{ethers.formatUnits(activeInvoice.amount, 6)} USDC</span>
+                  </div>
+                </div>
+              </div>
+
+              {x402Status === 'challenge' && (
+                <div className="space-y-4">
+                  <div className="text-xs text-[#bbcabf] leading-relaxed">
+                    Under the <strong className="text-[#4edea3]">EIP-402 Capital Permissions standard</strong>, this agent must submit on-chain fee verification before capital lease permissions are unlocked. 
+                    Choose your settlement channel below:
+                  </div>
+
+                  {x402Error && (
+                    <div className="bg-[#ffb4ab]/10 border border-[#ffb4ab]/20 p-3 text-xs text-[#ffb4ab] font-mono">
+                      Error: {x402Error}
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <button
+                      onClick={handlePayInvoiceOnChain}
+                      className="bg-[#10b981] hover:bg-[#003824] text-[#081425] font-mono font-bold py-3 text-xs uppercase tracking-wider transition cursor-pointer flex flex-col items-center justify-center space-y-1.5"
+                    >
+                      <span>Pay On-Chain (Privy)</span>
+                      <span className="text-[9px] font-normal uppercase opacity-75">Uses Fuji USDC</span>
+                    </button>
+                    <button
+                      onClick={handlePayInvoiceMock}
+                      className="bg-[#152031] hover:bg-[#2a3548] border border-[#3c4a42] hover:border-[#4edea3] text-white font-mono font-bold py-3 text-xs uppercase tracking-wider transition cursor-pointer flex flex-col items-center justify-center space-y-1.5"
+                    >
+                      <span>Simulate Mock Payment</span>
+                      <span className="text-[9px] font-normal uppercase text-amber-400">Offline fingerprint signature</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {(x402Status === 'paying' || x402Status === 'verifying') && (
+                <div className="flex flex-col items-center justify-center py-8 space-y-4">
+                  <RefreshCw className="w-10 h-10 text-[#4edea3] animate-spin" />
+                  <div className="text-sm font-mono text-white font-bold uppercase tracking-wider">
+                    {x402Status === 'paying' ? 'Broadcasting Payment Transaction...' : 'Verifying Lease Payment...'}
+                  </div>
+                  <p className="text-xs text-[#bbcabf] font-mono text-center max-w-sm leading-relaxed">
+                    {x402Status === 'paying' 
+                      ? 'Please sign the USDC transfer transaction in your wallet.' 
+                      : 'The gatekeeper node is verifying the C-Chain transaction logs.'
+                    }
+                  </p>
+                </div>
+              )}
+
+              {x402Status === 'success' && unlockedPayload && (
+                <div className="space-y-4">
+                  <div className="bg-[#10b981]/10 border border-[#10b981]/20 p-4 flex items-center text-[#4edea3] text-xs font-mono font-bold">
+                    <CheckCircle2 className="w-5 h-5 mr-3 shrink-0" />
+                    CHALLENGE RESOLVED — LEASE ACTIVE (ON-CHAIN VERIFIED)
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <div className="text-[10px] font-mono text-slate-500 uppercase font-bold">Unlocked Vault Lease Payload</div>
+                    <pre className="bg-[#040e1f] border border-[#1e293b] p-4 text-[11px] font-mono text-[#4edea3] overflow-x-auto whitespace-pre-wrap leading-relaxed max-h-60 rounded-sm">
+                      {JSON.stringify(unlockedPayload, null, 2)}
+                    </pre>
+                  </div>
+
+                  <button
+                    onClick={() => {
+                      setX402Status("idle");
+                      setActiveInvoice(null);
+                      setUnlockedPayload(null);
+                    }}
+                    className="w-full bg-[#152031] hover:bg-[#2a3548] text-white font-mono text-xs uppercase tracking-wider py-3 border border-[#3c4a42] transition cursor-pointer"
+                  >
+                    Close & Return
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         </div>
