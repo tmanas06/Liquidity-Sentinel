@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 export function createInvoiceStore() {
   const invoices = new Map();
+  const usedTxHashes = new Set();
 
   return {
     create({ agentId, reputation, amount, pricingTier, config }) {
@@ -37,6 +38,10 @@ export function createInvoiceStore() {
       if (!invoice) {
         return undefined;
       }
+      if (usedTxHashes.has(txHash)) {
+        return null; // Signal replay detected
+      }
+      usedTxHashes.add(txHash);
       invoice.paid = true;
       invoice.paymentTx = txHash;
       invoice.paidAt = new Date().toISOString();
@@ -45,6 +50,15 @@ export function createInvoiceStore() {
 
     isExpired(invoice) {
       return new Date(invoice.expiresAt).getTime() < Date.now();
+    },
+
+    hasUsedTxHash(txHash) {
+      return usedTxHashes.has(txHash);
+    },
+
+    // For testing only: clear used hashes
+    _clearUsed() {
+      usedTxHashes.clear();
     }
   };
 }

@@ -40,10 +40,22 @@ export async function readReputation(agentId, config) {
 }
 
 export function priceFromReputation(reputation, config) {
-  const trusted = Number(reputation.score) > 90;
-  return {
-    amount: trusted ? config.lowTierAmount : config.highTierAmount,
-    pricingTier: trusted ? "trusted-agent" : "standard-risk"
-  };
+  const score = Number(reputation.score);
+  if (score >= 80) {
+    return {
+      amount: config.lowTierAmount,
+      pricingTier: "trusted-agent"
+    };
+  } else if (score >= 40) {
+    return {
+      amount: config.midTierAmount,
+      pricingTier: "standard-risk"
+    };
+  } else {
+    return {
+      amount: config.highTierAmount,
+      pricingTier: "new-agent"
+    };
+  }
 }
 

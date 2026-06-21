@@ -8,7 +8,10 @@
     "dev:agent": "node agent/src/agent.js",
     "smoke:milestone1": "node scripts/milestone1-smoke.js",
     "smoke:agent": "node scripts/root-agent-smoke.js",
-    "smoke": "node scripts/smoke-test.js"
+    "smoke": "node scripts/smoke-test.js",
+    "demo": "node scripts/demo.js",
+    "smoke:negative": "node scripts/negative-path-test.js",
+    "demo:two-agent": "node scripts/two-agent-demo.js"
   },
   "dependencies": {
     "ethers": "^6.16.0",

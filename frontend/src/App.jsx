@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useSentinelData } from './hooks/useSentinelData';
 import { usePrivy, useWallets } from '@privy-io/react-auth';
 import { ethers } from 'ethers';
@@ -108,7 +108,7 @@ export default function App() {
     }, 1500);
   };
 
-  const fetchUserBalancesAndAgent = async () => {
+  const fetchUserBalancesAndAgent = useCallback(async () => {
     if (!authenticated || wallets.length === 0) return;
     try {
       const activeWallet = wallets[0];
@@ -143,7 +143,7 @@ export default function App() {
     } catch (err) {
       console.error("Failed to fetch user balances / agent:", err);
     }
-  };
+  }, [authenticated, wallets, fujiRpcUrl, tokenAddress]);
 
   useEffect(() => {
     if (authenticated) {
@@ -153,7 +153,7 @@ export default function App() {
       setUserUsdcBalance("0");
       setRegisteredAgentId("");
     }
-  }, [authenticated, wallets, liveBlocks]);
+  }, [authenticated, liveBlocks, fetchUserBalancesAndAgent]);
 
   useEffect(() => {
     const checkNode = async () => {
@@ -164,7 +164,7 @@ export default function App() {
         } else {
           setIsNodeOnline(false);
         }
-      } catch (err) {
+      } catch {
         setIsNodeOnline(false);
       }
     };
@@ -1020,9 +1020,9 @@ Keep your explanations concise and friendly.`;
                                         <td className="py-5 text-center text-[#bbcabf]">{agent.validations}</td>
                                         <td className="py-5 text-right">
                                              <span className={`px-2 py-1 text-[11px] border font-bold uppercase tracking-widest ${
-                                                agent.score > 90 ? 'bg-[#10b981]/10 text-[#4edea3] border-[#10b981]/20' : 'bg-[#ffb4ab]/10 text-[#ffb4ab] border-[#ffb4ab]/20'
+                                                agent.score >= 80 ? 'bg-[#10b981]/10 text-[#4edea3] border-[#10b981]/20' : 'bg-[#ffb4ab]/10 text-[#ffb4ab] border-[#ffb4ab]/20'
                                              }`}>
-                                                {agent.score > 90 ? "Trusted Flow" : "Standard Risk"}
+                                                {agent.score >= 80 ? "Trusted Flow" : agent.score >= 40 ? "Standard Risk" : "New Agent"}
                                              </span>
                                         </td>
                                     </tr>
@@ -1482,8 +1482,8 @@ Keep your explanations concise and friendly.`;
                 <div className="grid grid-cols-2 gap-4 text-xs font-mono border-t border-[#1e293b]/50 pt-3">
                   <div>
                     <span className="text-[9px] uppercase text-slate-500 block mb-0.5">Agent Trust Score</span>
-                    <span className={`font-bold ${activeInvoice.reputationScore > 90 ? 'text-[#4edea3]' : 'text-amber-400'}`}>
-                      {activeInvoice.reputationScore}/100 ({activeInvoice.pricingTier === 'trusted-agent' ? 'Trusted Flow' : 'Standard Risk'})
+                    <span className={`font-bold ${activeInvoice.reputationScore >= 80 ? 'text-[#4edea3]' : 'text-amber-400'}`}>
+                      {activeInvoice.reputationScore}/100 ({activeInvoice.pricingTier === 'trusted-agent' ? 'Trusted Flow' : activeInvoice.pricingTier === 'standard-risk' ? 'Standard Risk' : 'New Agent'})
                     </span>
                   </div>
                   <div>
@@ -1552,6 +1552,16 @@ Keep your explanations concise and friendly.`;
                     <pre className="bg-[#040e1f] border border-[#1e293b] p-4 text-[11px] font-mono text-[#4edea3] overflow-x-auto whitespace-pre-wrap leading-relaxed max-h-60 rounded-sm">
                       {JSON.stringify(unlockedPayload, null, 2)}
                     </pre>
+                    {unlockedPayload.paymentExplorerUrl && (
+                      <a
+                        href={unlockedPayload.paymentExplorerUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="block break-all text-xs font-mono text-[#4edea3] hover:underline"
+                      >
+                        View payment {unlockedPayload.paymentTx} on SnowTrace
+                      </a>
+                    )}
                   </div>
 
                   <button

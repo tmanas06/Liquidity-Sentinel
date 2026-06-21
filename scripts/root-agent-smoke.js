@@ -58,7 +58,14 @@ function runChild(command, args, env = {}) {
 async function main() {
   const server = spawn(process.execPath, ["api/src/server.js"], {
     cwd: process.cwd(),
-    env: { ...process.env, API_PORT: String(PORT), MOCK_REPUTATION_SCORE: "95" },
+    env: {
+      ...process.env,
+      API_PORT: String(PORT),
+      PAYMENT_MODE: "mock",
+      REPUTATION_MODE: "mock",
+      MOCK_REPUTATION_SCORE: "95",
+      AGENT_AI_MODE: "off"
+    },
     stdio: ["ignore", "pipe", "pipe"]
   });
 
@@ -69,7 +76,9 @@ async function main() {
     await waitForHealth();
     const output = await runChild(process.execPath, ["agent/src/agent.js"], {
       API_BASE_URL: baseUrl,
-      AGENT_ID: "1"
+      AGENT_ID: "1",
+      PAYMENT_MODE: "mock",
+      AGENT_AI_MODE: "off"
     });
 
     if (!output.includes("agent.capital_permission.received")) {

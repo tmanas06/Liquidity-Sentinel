@@ -77,14 +77,22 @@ export function useSentinelData() {
           let score = 0n;
           try {
              score = await repContract.getSummary(BigInt(agent.id));
-          } catch(e) {}
+          } catch {
+             // Keep the default score when the registry read fails.
+          }
           
           const numScore = Number(score);
+          let riskProfile = 10; // new-agent default
+          if (numScore >= 80) {
+            riskProfile = 1; // trusted-agent
+          } else if (numScore >= 40) {
+            riskProfile = 5; // standard-risk
+          }
           return {
             id: agent.id,
             score: numScore,
-            validations: 1, 
-            riskProfile: numScore > 90 ? 1 : 10 
+            validations: 1,
+            riskProfile
           };
         }));
 
@@ -158,7 +166,9 @@ export function useSentinelData() {
       try {
         const num = await provider.getBlockNumber();
         setLiveBlocks(num);
-      } catch(e) {}
+      } catch {
+        provider = createProvider(1);
+      }
     }, 4000);
 
     return () => {

@@ -1,16 +1,31 @@
-# React + Vite
+# Liquidity Sentinel Frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+React/Vite dashboard for the Liquidity Sentinel x402 and reputation demo.
 
-Currently, two official plugins are available:
+## Run locally
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+Start the API from the repository root:
 
-## React Compiler
+```bash
+npm run dev:api
+```
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+Then start the frontend:
 
-## Expanding the ESLint configuration
+```bash
+cd frontend
+npm install
+cp .env.example .env
+npm run dev
+```
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+On PowerShell, use `Copy-Item .env.example .env` instead of `cp` if needed.
+
+## Checks
+
+```bash
+npm run lint
+npm run build
+```
+
+`VITE_API_URL` defaults to `http://localhost:4020/api/v1`. `VITE_GROQ_API_KEY` is optional and is only needed for the frontend AI assistant.

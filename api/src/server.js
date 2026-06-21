@@ -226,6 +226,15 @@ async function handleCapitalRequest({ req, res, body, config, invoiceStore }) {
     return;
   }
 
+  if (invoice.paid) {
+    sendJson(res, 402, {
+      status: 402,
+      message: "Invoice has already been paid",
+      reason: "replay"
+    });
+    return;
+  }
+
   const verification = await verifyPaymentHeader({ headerValue: paymentHeader, invoice, config });
   log("payment.verified", {
     requestId: invoice.requestId,
@@ -244,12 +253,23 @@ async function handleCapitalRequest({ req, res, body, config, invoiceStore }) {
     return;
   }
 
-  invoiceStore.markPaid(invoice.requestId, verification.txHash);
+  const markResult = invoiceStore.markPaid(invoice.requestId, verification.txHash);
+  if (markResult === null) {
+    sendJson(res, 402, {
+      status: 402,
+      message: "Transaction hash already used for a different invoice",
+      reason: "replay"
+    });
+    return;
+  }
   const feedbackResult = await submitOnChainFeedback(invoice.agentId, 98, config);
   sendJson(res, 200, {
     status: 200,
     requestId: invoice.requestId,
     paymentTx: verification.txHash,
+    paymentExplorerUrl: config.paymentMode === "fuji"
+      ? `https://testnet.snowtrace.io/tx/${verification.txHash}`
+      : null,
     capitalPermission: {
       vault: config.mockVaultAddress,
       asset: body.asset,

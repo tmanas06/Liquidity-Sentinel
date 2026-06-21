@@ -61,6 +61,7 @@ export function loadConfig(overrides = {}) {
     identityRegistryAddress: env("IDENTITY_REGISTRY_ADDRESS", deployed.identityRegistry || ""),
     mockVaultAddress: env("MOCK_VAULT_ADDRESS", deployed.mockVault || "0x0000000000000000000000000000000000000F1A"),
     lowTierAmount: env("LOW_TIER_AMOUNT", "10000"),
+    midTierAmount: env("MID_TIER_AMOUNT", "100000"),
     highTierAmount: env("HIGH_TIER_AMOUNT", "500000"),
     tokenDecimals: intEnv("TOKEN_DECIMALS", 6),
     invoiceTtlSeconds: intEnv("INVOICE_TTL_SECONDS", 300),

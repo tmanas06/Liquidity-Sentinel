@@ -40,6 +40,20 @@ class MockResponse extends Writable {
     }
   }
 
+  setHeader(name, value) {
+    this.headers[name] = value;
+  }
+
+  getHeader(name) {
+    const lowerName = name.toLowerCase();
+    for (const [key, value] of Object.entries(this.headers)) {
+      if (key.toLowerCase() === lowerName) {
+        return value;
+      }
+    }
+    return undefined;
+  }
+
   _write(chunk, encoding, callback) {
     this.chunks.push(chunk);
     callback();
@@ -102,6 +116,10 @@ function createMockFetch(requestListener) {
 }
 
 async function main() {
+  process.env.PAYMENT_MODE = "mock";
+  process.env.REPUTATION_MODE = "mock";
+  process.env.AGENT_AI_MODE = "off";
+
   const server = createSentinelServer({
     paymentMode: "mock",
     reputationMode: "mock",

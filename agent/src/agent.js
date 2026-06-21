@@ -51,6 +51,14 @@ export async function runAgent(configOverrides = {}) {
 
   const txHash = await settleInvoice(invoice, config);
   log("agent.payment.sent", { requestId: invoice.requestId, txHash });
+  if (config.paymentMode === "fuji") {
+    log("agent.payment.explorer", {
+      requestId: invoice.requestId,
+      txHash,
+      url: `https://testnet.snowtrace.io/tx/${txHash}`
+    });
+  }
+
 
   const retry = await postCapitalRequest(config.apiBaseUrl, requestBody, {
     "x-request-id": invoice.requestId,
@@ -94,7 +102,16 @@ async function postCapitalRequest(apiBaseUrl, body, headers = {}) {
 }
 
 async function askGroqShouldPay(invoice) {
+  if (process.env.AGENT_AI_MODE === "off" || process.env.AGENT_AI_MODE === "mock") {
+    log("agent.ai.skipped", { reason: `AGENT_AI_MODE=${process.env.AGENT_AI_MODE}` });
+    return true;
+  }
   const groqKey = process.env.VITE_GROQ_API_KEY || process.env.GROQ_API_KEY || "";
+  if (!groqKey) {
+    log("agent.ai.skipped", { reason: "No Groq API key configured" });
+    return true;
+  }
+
   const prompt = `You are an automated DeFi trading agent acting on behalf of a liquidity pool. You requested capital and received an invoice via the x402 protocol.
   
 Invoice details:

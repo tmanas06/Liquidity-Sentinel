@@ -1,8 +1,8 @@
 export async function submitOnChainFeedback(agentId, score, config) {
-  if (config.reputationMode === "mock" || !config.reputationRegistryAddress || !config.sentinelPrivateKey) {
+  if (config.reputationMode !== "rpc" || !config.reputationRegistryAddress || !config.sentinelPrivateKey) {
     return {
       status: "skipped",
-      reason: "Mock mode active, or ReputationRegistry address / Sentinel key is not configured."
+      reason: "RPC reputation mode is inactive, or ReputationRegistry address / Sentinel key is not configured."
     };
   }
 
