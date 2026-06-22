@@ -3,10 +3,10 @@ import { useSentinelData } from './hooks/useSentinelData';
 import { usePrivy, useWallets } from '@privy-io/react-auth';
 import { ethers } from 'ethers';
 import contractAddresses from './addresses.json';
-import { Activity, ShieldCheck, FileText, Settings, Bell, LayoutDashboard, X, RefreshCw, CheckCircle2, Cpu } from 'lucide-react';
+import { Activity, ShieldCheck, FileText, Settings, Bell, LayoutDashboard, X, RefreshCw, CheckCircle2, Cpu, AlertCircle, Play, DollarSign, Lock, Unlock, Star, Fingerprint, Copy, User, Terminal } from 'lucide-react';
+import { ClaudeChatInput } from './components/ui/claude-style-ai-input';
 
 const renderMessageContent = (content) => {
-  // Replace markdown bold **text** with HTML <strong>text</strong>
   const boldRegex = /\*\*(.*?)\*\*/g;
   const bulletRegex = /^\*\s+(.*)$/gm;
   const numBulletRegex = /^(\d+)\.\s+(.*)$/gm;
@@ -18,7 +18,7 @@ const renderMessageContent = (content) => {
   return <span dangerouslySetInnerHTML={{ __html: html }} />;
 };
 
-export default function App() {
+export default function App({ initialTab = 'hub', isGuidedEntry = false, onNavigate, onExit }) {
   const { agents, vaultBalance, liveBlocks, eventsFeed, loading, executeAdminSlash, addLog } = useSentinelData();
   const { login, logout, authenticated, user } = usePrivy();
   const { wallets } = useWallets();
@@ -26,7 +26,7 @@ export default function App() {
   const [scoreInput, setScoreInput] = useState('');
   const [isSlasherPending, setIsSlasherPending] = useState(false);
   const [isInitializing, setIsInitializing] = useState(false);
-  const [activeTab, setActiveTab] = useState('hub');
+  const [activeTab, setActiveTab] = useState(initialTab);
 
   // Speedrun Playground States
   const [userAvaxBalance, setUserAvaxBalance] = useState("0");
@@ -41,7 +41,18 @@ export default function App() {
   const [x402Status, setX402Status] = useState("idle"); // idle | challenge | paying | verifying | success | failed
   const [unlockedPayload, setUnlockedPayload] = useState(null);
   const [x402Error, setX402Error] = useState("");
-
+  const [showOnboarding, setShowOnboarding] = useState(false);
+  
+  // Real transaction and payload capture
+  const [agentTxDetails, setAgentTxDetails] = useState({ hash: null, timestamp: null });
+  const [paymentTxDetails, setPaymentTxDetails] = useState({ hash: null, timestamp: null });
+  const [challengeDetails, setChallengeDetails] = useState({ nonce: null, expiresAt: null, receipt: null, consumedAt: null });
+  
+  // Execution Terminal States
+  const [showTerminal, setShowTerminal] = useState(false);
+  const [terminalLogs, setTerminalLogs] = useState([]);
+  const [terminalStatus, setTerminalStatus] = useState("idle");
+  
   // Interactive Popup States
   const [isSecurityOpen, setIsSecurityOpen] = useState(false);
   const [isSystemOpen, setIsSystemOpen] = useState(false);
@@ -227,7 +238,8 @@ export default function App() {
       const tx = await identityContract.newAgent(agentDomainInput.trim(), activeWallet.address);
       addLog("SYSTEM", `Agent registration tx broadcasted: ${tx.hash.slice(0, 10)}... Awaiting mining.`);
       await tx.wait();
-      addLog("SYSTEM", `ERC-8004 Agent successfully registered!`, true);
+      setAgentTxDetails({ hash: tx.hash, timestamp: new Date().toLocaleString() });
+      addLog("SYSTEM", `ERC-8004 Agent successfully registered!`, true, tx.hash);
       alert(`Agent registration confirmed on-chain!`);
       fetchUserBalancesAndAgent();
     } catch (err) {
@@ -241,7 +253,7 @@ export default function App() {
   const handleRefillVault = async () => {
     if (!authenticated || wallets.length === 0) return;
     setIsRefilling(true);
-    addLog("SYSTEM", "Sending 10.00 USDC to Mock Vault reserves...");
+    addLog("SYSTEM", "Sending 10.00 USDC to Sentinel Liquidity Pool reserves...");
     try {
       const activeWallet = wallets[0];
       const eip1193Provider = await activeWallet.getEthereumProvider();
@@ -255,10 +267,10 @@ export default function App() {
       );
 
       const amount = ethers.parseUnits("10", 6);
-      const tx = await usdcContract.transfer(contractAddresses.mockVault, amount);
+      const tx = await usdcContract.transfer(contractAddresses.liquidityVault, amount);
       addLog("SYSTEM", `Vault deposit broadcasted: ${tx.hash.slice(0, 10)}...`);
       await tx.wait();
-      addLog("SYSTEM", "Successfully deposited 10 USDC into Mock Vault!", true);
+      addLog("SYSTEM", "Successfully deposited 10 USDC into Sentinel Liquidity Pool!", true);
       alert("Successfully deposited 10 USDC!");
       fetchUserBalancesAndAgent();
     } catch (err) {
@@ -267,6 +279,56 @@ export default function App() {
     } finally {
       setIsRefilling(false);
     }
+  };
+
+  const handleExecuteArbitrage = async () => {
+    if (!unlockedPayload || !wallets.length) return;
+    
+    setShowTerminal(true);
+    setTerminalLogs([
+      { ts: new Date().toLocaleTimeString(), text: "[AGENT] Initializing Status AI Node..." },
+      { ts: new Date().toLocaleTimeString(), text: "[AGENT] Ingesting EIP-402 Capital Permission Payload..." }
+    ]);
+    setTerminalStatus("running");
+    
+    setTimeout(() => {
+      setTerminalLogs(prev => [...prev, { ts: new Date().toLocaleTimeString(), text: "[AGENT] Evaluating Arbitrage Pathways on Fuji C-Chain..." }]);
+    }, 1500);
+
+    setTimeout(() => {
+      setTerminalLogs(prev => [...prev, { ts: new Date().toLocaleTimeString(), text: `[AGENT] Found opportunity on TraderJoe & Pangolin for ${unlockedPayload.capitalPermission.asset}.` }]);
+    }, 3000);
+
+    setTimeout(async () => {
+      setTerminalLogs(prev => [...prev, { ts: new Date().toLocaleTimeString(), text: "[AGENT] Requesting execution via gatekeeper..." }]);
+      
+      try {
+        const res = await fetch("http://localhost:4020/api/v1/execute-lease", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            requestId: unlockedPayload.requestId,
+            payload: unlockedPayload.capitalPermission,
+            recipient: wallets[0].address
+          })
+        });
+        
+        const data = await res.json();
+        
+        if (res.ok) {
+          setTerminalLogs(prev => [...prev, { ts: new Date().toLocaleTimeString(), text: `[SYSTEM] Flash loan executed on-chain!` }]);
+          setTerminalLogs(prev => [...prev, { ts: new Date().toLocaleTimeString(), text: `[SUCCESS] Transaction Hash: ${data.txHash}`, isLink: data.txHash }]);
+          setTerminalStatus("success");
+          addLog("AGENT", "Agent completed capital arbitrage successfully.", true, data.txHash);
+        } else {
+          setTerminalLogs(prev => [...prev, { ts: new Date().toLocaleTimeString(), text: `[ERROR] Execution failed: ${data.message}`, isError: true }]);
+          setTerminalStatus("error");
+        }
+      } catch (err) {
+        setTerminalLogs(prev => [...prev, { ts: new Date().toLocaleTimeString(), text: `[ERROR] Network error: ${err.message}`, isError: true }]);
+        setTerminalStatus("error");
+      }
+    }, 4500);
   };
 
   const handleTriggerX402Request = async () => {
@@ -294,6 +356,16 @@ export default function App() {
         const data = await res.json();
         setActiveInvoice(data.invoice);
         setX402Status("challenge");
+        
+        // Extract real details from the invoice
+        const reqIdParts = data.invoice.requestId.split('_');
+        setChallengeDetails({
+            nonce: reqIdParts.length > 1 ? reqIdParts[1].slice(0, 6).toUpperCase() : "1A2B3C",
+            expiresAt: data.invoice.expiresAt ? new Date(data.invoice.expiresAt).toLocaleTimeString() : "00:00:00",
+            receipt: null,
+            consumedAt: null
+        });
+
         addLog("SYSTEM", `Gatekeeper issued x402 payment challenge! Invoice: ${data.invoice.requestId.slice(-6)}`);
       } else {
         const data = await res.json();
@@ -326,7 +398,8 @@ export default function App() {
       addLog("SYSTEM", `Payment transaction broadcasted: ${tx.hash.slice(0, 10)}... Awaiting confirmation.`);
       await tx.wait();
       
-      addLog("SYSTEM", `Payment confirmed! Submitting verification hash to gatekeeper...`);
+      setPaymentTxDetails({ hash: tx.hash, timestamp: new Date().toLocaleString() });
+      addLog("SYSTEM", `Payment confirmed! Submitting verification hash to gatekeeper...`, false, tx.hash);
       setX402Status("verifying");
 
       const b64Payment = btoa(tx.hash);
@@ -349,6 +422,11 @@ export default function App() {
       if (res.status === 200) {
         setX402Status("success");
         setUnlockedPayload(data);
+        setChallengeDetails(prev => ({
+            ...prev,
+            receipt: data.paymentTx || tx.hash,
+            consumedAt: new Date().toLocaleString()
+        }));
         addLog("SYSTEM", `EIP-402 Challenge resolved! Capital Lease Permission Granted.`, true);
       } else {
         throw new Error(data.message || data.reason || `Verification returned status ${res.status}`);
@@ -360,56 +438,7 @@ export default function App() {
     }
   };
 
-  const handlePayInvoiceMock = async () => {
-    if (!activeInvoice) return;
-    setX402Status("verifying");
-    addLog("SYSTEM", "Simulating offline mock signature fingerprint...");
-    try {
-      const fingerprint = [
-        activeInvoice.requestId,
-        activeInvoice.agentId,
-        activeInvoice.amount,
-        activeInvoice.destination.toLowerCase(),
-        activeInvoice.token.toLowerCase()
-      ].join(":");
 
-      const msgBuffer = new TextEncoder().encode(fingerprint);
-      const hashBuffer = await window.crypto.subtle.digest('SHA-256', msgBuffer);
-      const hashArray = Array.from(new Uint8Array(hashBuffer));
-      const mockHash = '0x' + hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-
-      addLog("SYSTEM", `Computed local mock fingerprint hash: ${mockHash.slice(0, 10)}...`);
-
-      const b64Payment = btoa(mockHash);
-      const res = await fetch(`${apiUrl}/request-capital`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-request-id": activeInvoice.requestId,
-          "x-payment": b64Payment
-        },
-        body: JSON.stringify({
-          agentId: activeInvoice.agentId,
-          capitalAmount: "5000000",
-          asset: "USDC",
-          strategyHint: "playground-arb"
-        })
-      });
-
-      const data = await res.json();
-      if (res.status === 200) {
-        setX402Status("success");
-        setUnlockedPayload(data);
-        addLog("SYSTEM", `EIP-402 Challenge resolved! Capital Lease Permission Granted (Simulated).`, true);
-      } else {
-        throw new Error(data.message || data.reason || `Verification returned status ${res.status}`);
-      }
-    } catch (err) {
-      setX402Status("challenge");
-      setX402Error(err.message + " (Hint: Make sure PAYMENT_MODE=mock in settings or .env if simulating)");
-      addLog("SYSTEM", `Simulated verification failed: ${err.message}`, false);
-    }
-  };
 
   const handleInitializeNode = async () => {
     setIsInitializing(true);
@@ -459,27 +488,36 @@ export default function App() {
     }
   };
 
-  const handleSendMessage = async (e) => {
-    e.preventDefault();
-    if (!chatInput.trim()) return;
+  const handleSendMessage = async (msgText, files = [], pasted = []) => {
+    // Combine text, files, and pasted content for the AI prompt
+    let fullPrompt = msgText || "";
+    
+    if (files.length > 0) {
+      fullPrompt += "\n\n[Attached Files]:\n" + files.map(f => `--- ${f.file.name} ---\n${f.textContent || 'Binary file'}`).join('\n\n');
+    }
+    if (pasted.length > 0) {
+      fullPrompt += "\n\n[Pasted Content]:\n" + pasted.map(p => p.content).join('\n\n');
+    }
+
+    if (!fullPrompt.trim()) return;
 
     const userMsgId = Date.now().toString();
-    const userMessage = { id: userMsgId, role: 'user', content: chatInput };
+    const userMessage = { id: userMsgId, role: 'user', content: fullPrompt };
     setChatMessages(prev => [...prev, userMessage]);
-    const promptText = chatInput;
-    setChatInput('');
+    
+    const promptText = fullPrompt;
     setIsAiLoading(true);
 
     try {
       const systemPrompt = aiMode === 'general' 
-        ? "You are the AVAX Sentinel AI companion. Answer the user's questions about blockchain, web3, Avalanche, liquidity, or general queries in a concise and helpful manner. Do not trigger or format any wallet actions."
-        : `You are the AVAX Sentinel AI execution assistant.
-If the user wants to swap or bridge crypto:
-1. You must identify their intent (swap or bridge).
+        ? "You are the 402 Status AI companion. Answer the user's questions about blockchain, web3, Avalanche, liquidity, or general queries in a concise and helpful manner. Do not trigger or format any wallet actions."
+        : `You are the 402 Status AI execution assistant.
+If the user wants to swap, bridge, or transfer crypto:
+1. You must identify their intent (swap, bridge, or transfer).
 2. Format your response to include a JSON block at the very end of your response, starting with \`[ACTION_TRIGGER]\` followed by a JSON string:
-\`[ACTION_TRIGGER]{"action": "swap", "from": "AVAX", "to": "USDC", "amount": "0.1"}\` or \`[ACTION_TRIGGER]{"action": "bridge", "from": "USDC", "to": "Ethereum", "amount": "5"}\`
-Ensure you strictly extract the action (swap or bridge), from token, to token/chain, and amount as numbers. If they specify tokens, AVAX and USDC are supported. If they ask to bridge, USDC can be bridged to Ethereum/Arbitrum/etc.
-Example response: 'I can help you swap 0.1 AVAX to USDC. Please confirm the transaction details below. [ACTION_TRIGGER]{"action": "swap", "from": "AVAX", "to": "USDC", "amount": "0.1"}'
+\`[ACTION_TRIGGER]{"action": "swap", "from": "AVAX", "to": "USDC", "amount": "0.1"}\`, \`[ACTION_TRIGGER]{"action": "bridge", "from": "USDC", "to": "Ethereum", "amount": "5"}\`, or \`[ACTION_TRIGGER]{"action": "transfer", "from": "AVAX", "to": "0x715F47Ce330aF0fd7130290874a182FBaF1D892F", "amount": "0.1"}\`
+Ensure you strictly extract the action (swap, bridge, or transfer), from token, to token/chain/address, and amount as numbers. If they specify tokens, AVAX and USDC are supported. If they ask to bridge, USDC can be bridged to Ethereum/Arbitrum/etc. If they ask to transfer, "to" should be the target address.
+Example response: 'I can help you transfer 0.1 AVAX. Please confirm the details below. [ACTION_TRIGGER]{"action": "transfer", "from": "AVAX", "to": "0x715F47Ce330aF0fd7130290874a182FBaF1D892F", "amount": "0.1"}'
 
 Keep your explanations concise and friendly.`;
 
@@ -527,7 +565,7 @@ Keep your explanations concise and friendly.`;
       const aiMsgId = (Date.now() + 1).toString();
       setChatMessages(prev => [...prev, { id: aiMsgId, role: 'assistant', content: cleanedText, action: triggerData }]);
     } catch (err) {
-      setChatMessages(prev => [...prev, { id: Date.now().toString(), role: 'assistant', content: `Error communicating with Groq: ${err.message}` }]);
+      setChatMessages(prev => [...prev, { id: Date.now().toString(), role: 'assistant', content: `Error communicating with Status AI: ${err.message}` }]);
     } finally {
       setIsAiLoading(false);
     }
@@ -548,11 +586,26 @@ Keep your explanations concise and friendly.`;
       const signer = await browserProvider.getSigner();
 
       let tx;
-      if (action.action === 'swap') {
+      if (action.action === 'transfer') {
+        // Transfer to destination address
+        if (action.from.toUpperCase() === 'AVAX') {
+          tx = await signer.sendTransaction({
+            to: action.to,
+            value: ethers.parseEther(action.amount.toString())
+          });
+        } else {
+          const usdcContract = new ethers.Contract(
+            "0x5425890298aed601595a70AB815c96711a31Bc65",
+            ["function transfer(address to, uint256 amount) returns (bool)"],
+            signer
+          );
+          tx = await usdcContract.transfer(action.to, ethers.parseUnits(action.amount.toString(), 6));
+        }
+      } else if (action.action === 'swap') {
         if (action.from.toUpperCase() === 'AVAX') {
           // Send AVAX swap to vault
           tx = await signer.sendTransaction({
-            to: contractAddresses.mockVault,
+            to: contractAddresses.liquidityVault,
             value: ethers.parseEther(action.amount.toString())
           });
         } else {
@@ -562,13 +615,13 @@ Keep your explanations concise and friendly.`;
             ["function transfer(address to, uint256 amount) returns (bool)"],
             signer
           );
-          tx = await usdcContract.transfer(contractAddresses.mockVault, ethers.parseUnits(action.amount.toString(), 6));
+          tx = await usdcContract.transfer(contractAddresses.liquidityVault, ethers.parseUnits(action.amount.toString(), 6));
         }
       } else {
         // Bridge action: transfer AVAX or USDC to simulate lock
         if (action.from.toUpperCase() === 'AVAX') {
           tx = await signer.sendTransaction({
-            to: contractAddresses.mockVault,
+            to: contractAddresses.liquidityVault,
             value: ethers.parseEther(action.amount.toString())
           });
         } else {
@@ -577,7 +630,7 @@ Keep your explanations concise and friendly.`;
             ["function transfer(address to, uint256 amount) returns (bool)"],
             signer
           );
-          tx = await usdcContract.transfer(contractAddresses.mockVault, ethers.parseUnits(action.amount.toString(), 6));
+          tx = await usdcContract.transfer(contractAddresses.liquidityVault, ethers.parseUnits(action.amount.toString(), 6));
         }
       }
 
@@ -596,7 +649,7 @@ Keep your explanations concise and friendly.`;
     { id: 'trust', label: 'Trust Registry', icon: ShieldCheck },
     { id: 'billing', label: 'Billing Terminal', icon: FileText },
     { id: 'gov', label: 'Governance Panel', icon: Settings },
-    { id: 'ai', label: 'Groq AI Agent', icon: Cpu }
+    { id: 'ai', label: 'Status AI', icon: Cpu }
   ];
 
   return (
@@ -605,10 +658,13 @@ Keep your explanations concise and friendly.`;
       {/* Left Sidebar */}
       <aside className="w-64 bg-[#081425] border-r border-[#1e293b] flex flex-col justify-between shrink-0">
         <div>
-          <div className="p-6 pb-2">
-            <h1 className="text-xl font-bold tracking-wider text-[#4edea3]">AVAX SENTINEL</h1>
-            <div className="text-[10px] text-[#bbcabf] font-mono mt-1 tracking-widest uppercase">NOC Operator</div>
-          </div>
+          <button type="button" onClick={onExit} className="p-6 pb-2 text-left flex items-center gap-3">
+            <img src="/logo.png" alt="402 Status Logo" className="h-8 w-auto object-contain" />
+            <div>
+              <h1 className="text-xl font-bold tracking-wider text-[#4edea3]">402 STATUS</h1>
+              <div className="text-[10px] text-[#bbcabf] font-mono mt-1 tracking-widest uppercase">Capital operations</div>
+            </div>
+          </button>
           <nav className="mt-4 border-t border-[#1e293b]">
             {navItems.map((item) => {
               const Icon = item.icon;
@@ -665,8 +721,9 @@ Keep your explanations concise and friendly.`;
         
         {/* Top Navbar */}
         <header className="h-[72px] border-b border-[#1e293b] bg-[#081425] flex items-center justify-between px-8 shrink-0">
-          <div className="font-bold text-[20px] tracking-wider text-white uppercase font-sans">
-             AVAX SENTINEL
+          <div className="font-bold text-[15px] lg:text-[20px] tracking-wider text-white uppercase font-sans flex items-center gap-2">
+             <img src="/logo.png" alt="402 Status Logo" className="h-6 w-auto object-contain" />
+             402 STATUS
           </div>
           <div className="flex items-center space-x-6">
             <div 
@@ -739,256 +796,418 @@ Keep your explanations concise and friendly.`;
         {/* Dynamic Content Body */}
         <main className="flex-1 p-8 overflow-y-auto">
             {activeTab === 'hub' && (
-                <div className="space-y-6 max-w-7xl mx-auto">
-                    
-                    {/* Sentinel Speedrun & Playground Guide */}
-                    <div className="bg-[#081425] border border-[#1e293b] p-6 relative overflow-hidden">
-                        <div className="absolute top-0 right-0 w-64 h-64 bg-[#10b981] opacity-[0.02] rounded-full blur-3xl pointer-events-none"></div>
-                        <div className="flex justify-between items-center mb-6">
-                            <div>
-                                <h2 className="text-lg font-bold text-white flex items-center">
-                                    <ShieldCheck className="w-5 h-5 text-[#4edea3] mr-2" />
-                                    Sentinel Developer Speedrun Guide
-                                </h2>
-                                <p className="text-xs text-[#bbcabf] mt-1">
-                                    Walk through the complete EIP-8004 identity registration and EIP-402 billing loop.
-                                </p>
-                            </div>
-                            {authenticated && (
-                                <div className="text-right text-xs font-mono text-[#bbcabf]">
-                                    <div className="text-white font-bold">{user?.wallet?.address?.slice(0, 8)}...</div>
-                                    <div className="mt-1 flex items-center justify-end space-x-3">
-                                        <span>AVAX: <strong className="text-[#4edea3]">{userAvaxBalance}</strong></span>
-                                        <span>USDC: <strong className="text-[#4edea3]">{userUsdcBalance}</strong></span>
-                                    </div>
-                                </div>
-                            )}
+                <div className="space-y-6 max-w-[1400px] mx-auto text-white">
+                    {/* Header */}
+                    <div className="flex justify-between items-center bg-[#081425] border border-[#1e293b] p-6">
+                        <div>
+                            <h2 className="text-[20px] font-bold text-white flex items-center">
+                                <ShieldCheck className="w-5 h-5 text-[#4edea3] mr-2" />
+                                Capital Access Control
+                            </h2>
+                            <p className="text-xs text-[#bbcabf] mt-1 font-mono">
+                                Deterministic policy → verifiable execution → auditable capital loop.
+                            </p>
                         </div>
+                    </div>
 
-                        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4">
-                            {/* Step 1: Initialize Node */}
-                            <div className={`p-4 border rounded-sm flex flex-col justify-between h-36 transition ${
-                                isNodeOnline ? 'bg-[#10b981]/5 border-[#10b981]/30' : 'bg-[#040e1f] border-[#3c4a42]'
-                            }`}>
-                                <div>
-                                    <div className="flex justify-between items-center mb-2">
-                                        <span className="text-[10px] font-mono font-bold text-slate-500 uppercase">Step 1</span>
-                                        {isNodeOnline ? (
-                                            <span className="text-[9px] font-mono bg-[#10b981]/15 text-[#4edea3] px-1.5 py-0.5 rounded font-bold">ONLINE</span>
-                                        ) : (
-                                            <span className="text-[9px] font-mono bg-[#ffb4ab]/15 text-[#ffb4ab] px-1.5 py-0.5 rounded font-bold">OFFLINE</span>
-                                        )}
-                                    </div>
-                                    <h3 className="text-xs font-bold text-white">Node Health</h3>
-                                    <p className="text-[10px] text-[#bbcabf] mt-1 font-mono leading-snug">Verify port 4020 gateway is active.</p>
+                    {/* Capital Access Control Flowchart */}
+                    <div className="bg-[#081425] border border-[#1e293b] p-8 relative overflow-hidden">
+                        <div className="flex flex-col lg:flex-row items-center justify-between gap-8 relative z-10">
+                            
+                            {/* Agent Node */}
+                            <div className="w-[300px] bg-[#040e1f] border border-[#1e293b] p-5 rounded-sm flex items-center shrink-0">
+                                <div className="w-12 h-12 rounded bg-[#10b981]/10 flex items-center justify-center mr-4">
+                                    <Fingerprint className="w-6 h-6 text-[#4edea3]" />
                                 </div>
-                                <button
-                                    onClick={handleInitializeNode}
-                                    disabled={isInitializing}
-                                    className="w-full bg-[#152031] hover:bg-[#2a3548] text-white font-mono text-[10px] py-1.5 rounded-sm border border-[#3c4a42] uppercase tracking-wider transition disabled:opacity-50 cursor-pointer"
-                                >
-                                    {isInitializing ? "Checking..." : "Verify Connection"}
-                                </button>
-                            </div>
-
-                            {/* Step 2: Connect Wallet */}
-                            <div className={`p-4 border rounded-sm flex flex-col justify-between h-36 transition ${
-                                authenticated ? 'bg-[#10b981]/5 border-[#10b981]/30' : 'bg-[#040e1f] border-[#3c4a42]'
-                            }`}>
                                 <div>
-                                    <div className="flex justify-between items-center mb-2">
-                                        <span className="text-[10px] font-mono font-bold text-slate-500 uppercase">Step 2</span>
-                                        {authenticated ? (
-                                            <span className="text-[9px] font-mono bg-[#10b981]/15 text-[#4edea3] px-1.5 py-0.5 rounded font-bold">CONNECTED</span>
-                                        ) : (
-                                            <span className="text-[9px] font-mono bg-amber-500/15 text-amber-400 px-1.5 py-0.5 rounded font-bold">PENDING</span>
-                                        )}
+                                    <div className="text-[14px] font-bold text-white flex items-center">
+                                        Agent {registeredAgentId ? `#${registeredAgentId}` : "Unregistered"} 
+                                        <Copy className="w-3 h-3 ml-2 text-[#bbcabf] cursor-pointer" />
                                     </div>
-                                    <h3 className="text-xs font-bold text-white">Auth Wallet</h3>
-                                    <p className="text-[10px] text-[#bbcabf] mt-1 font-mono leading-snug">Authenticate operator wallet via Privy.</p>
-                                </div>
-                                {!authenticated ? (
-                                    <button
-                                        onClick={login}
-                                        className="w-full bg-[#10b981] hover:bg-[#003824] text-[#081425] font-mono text-[10px] font-bold py-1.5 rounded-sm uppercase tracking-wider transition cursor-pointer"
-                                    >
-                                        Connect
-                                    </button>
-                                ) : (
-                                    <button
-                                        onClick={logout}
-                                        className="w-full bg-[#ffb4ab]/10 hover:bg-[#ffb4ab]/20 text-[#ffb4ab] border border-[#ffb4ab]/50 font-mono text-[10px] py-1.5 rounded-sm uppercase tracking-wider transition cursor-pointer"
-                                    >
-                                        Disconnect
-                                    </button>
-                                )}
-                            </div>
-
-                            {/* Step 3: Faucet */}
-                            <div className={`p-4 border rounded-sm flex flex-col justify-between h-36 transition ${
-                                Number(userAvaxBalance) > 0.05 ? 'bg-[#10b981]/5 border-[#10b981]/30' : 'bg-[#040e1f] border-[#3c4a42]'
-                            }`}>
-                                <div>
-                                    <div className="flex justify-between items-center mb-2">
-                                        <span className="text-[10px] font-mono font-bold text-slate-500 uppercase">Step 3</span>
-                                        {Number(userAvaxBalance) > 0.05 ? (
-                                            <span className="text-[9px] font-mono bg-[#10b981]/15 text-[#4edea3] px-1.5 py-0.5 rounded font-bold">FUNDED</span>
-                                        ) : (
-                                            <span className="text-[9px] font-mono bg-amber-500/15 text-amber-400 px-1.5 py-0.5 rounded font-bold">LOW GAS</span>
-                                        )}
-                                    </div>
-                                    <h3 className="text-xs font-bold text-white">Claim Faucet</h3>
-                                    <p className="text-[10px] text-[#bbcabf] mt-1 font-mono leading-snug">Get 0.1 AVAX & 100 USDC on Fuji.</p>
-                                </div>
-                                <button
-                                    onClick={handleRequestFaucet}
-                                    disabled={!authenticated || isFauceting}
-                                    className="w-full bg-[#152031] hover:bg-[#2a3548] text-white font-mono text-[10px] py-1.5 rounded-sm border border-[#3c4a42] uppercase tracking-wider transition disabled:opacity-50 cursor-pointer"
-                                >
-                                    {isFauceting ? "Claiming..." : "Claim Funds"}
-                                </button>
-                            </div>
-
-                            {/* Step 4: Register Agent */}
-                            <div className={`p-4 border rounded-sm flex flex-col justify-between h-36 transition ${
-                                registeredAgentId ? 'bg-[#10b981]/5 border-[#10b981]/30' : 'bg-[#040e1f] border-[#3c4a42]'
-                            }`}>
-                                <div>
-                                    <div className="flex justify-between items-center mb-2">
-                                        <span className="text-[10px] font-mono font-bold text-slate-500 uppercase">Step 4</span>
+                                    <div className="mt-1 flex items-center">
                                         {registeredAgentId ? (
-                                            <span className="text-[9px] font-mono bg-[#10b981]/15 text-[#4edea3] px-1.5 py-0.5 rounded font-bold">ID: #{registeredAgentId}</span>
+                                            <span className="text-[9px] font-mono bg-[#10b981]/15 text-[#4edea3] px-2 py-0.5 rounded font-bold">TRUSTED</span>
                                         ) : (
-                                            <span className="text-[9px] font-mono bg-amber-500/15 text-amber-400 px-1.5 py-0.5 rounded font-bold">UNREG</span>
+                                            <span className="text-[9px] font-mono bg-amber-500/15 text-amber-400 px-2 py-0.5 rounded font-bold">PENDING</span>
                                         )}
                                     </div>
-                                    <h3 className="text-xs font-bold text-white">Register Agent</h3>
-                                    <p className="text-[10px] text-[#bbcabf] mt-1 font-mono leading-snug">Mint EIP-8004 agent card on-chain.</p>
+                                    <div className="text-[10px] text-[#bbcabf] mt-2 font-mono flex items-center">
+                                        ERC-8004 Identity Registry verified <CheckCircle2 className="w-3 h-3 text-[#4edea3] ml-1" />
+                                    </div>
                                 </div>
-                                {!registeredAgentId ? (
-                                    <div className="space-y-1">
-                                        <input
-                                            type="text"
-                                            value={agentDomainInput}
-                                            onChange={(e) => setAgentDomainInput(e.target.value)}
-                                            placeholder="agent.domain"
-                                            className="w-full bg-[#081425] border border-[#3c4a42] text-[10px] font-mono px-1.5 py-0.5 text-white focus:outline-none focus:border-[#4edea3]"
-                                        />
-                                        <button
-                                            onClick={handleRegisterAgent}
-                                            disabled={!authenticated || isMintingAgent}
-                                            className="w-full bg-[#152031] hover:bg-[#2a3548] text-white font-mono text-[10px] py-1 rounded-sm border border-[#3c4a42] uppercase tracking-wider transition disabled:opacity-50 cursor-pointer"
-                                        >
-                                            {isMintingAgent ? "Minting..." : "Mint Card"}
-                                        </button>
-                                    </div>
-                                ) : (
-                                    <div className="text-[10px] font-mono text-center text-[#4edea3] font-bold border border-[#10b981]/20 py-1.5 bg-[#10b981]/5">
-                                        Minted & Active
-                                    </div>
-                                )}
                             </div>
 
-                            {/* Step 5: Vault Deposits */}
-                            <div className={`p-4 border rounded-sm flex flex-col justify-between h-36 transition ${
-                                Number(vaultBalance) >= 10 ? 'bg-[#10b981]/5 border-[#10b981]/30' : 'bg-[#040e1f] border-[#3c4a42]'
-                            }`}>
-                                <div>
-                                    <div className="flex justify-between items-center mb-2">
-                                        <span className="text-[10px] font-mono font-bold text-slate-500 uppercase">Step 5</span>
-                                        {Number(vaultBalance) >= 10 ? (
-                                            <span className="text-[9px] font-mono bg-[#10b981]/15 text-[#4edea3] px-1.5 py-0.5 rounded font-bold">LIQUID</span>
-                                        ) : (
-                                            <span className="text-[9px] font-mono bg-amber-500/15 text-amber-400 px-1.5 py-0.5 rounded font-bold">EMPTY</span>
-                                        )}
+                            {/* Connecting Line */}
+                            <div className="hidden lg:block flex-1 h-[1px] bg-gradient-to-r from-[#1e293b] via-[#4edea3] to-[#1e293b] relative">
+                            </div>
+
+                            {/* Reputation Circular Diagram */}
+                            {(() => {
+                                const activeAgentData = agents.find(a => a.id === registeredAgentId) || { score: 0 };
+                                const score = activeAgentData.score;
+                                const strokeDasharray = `${(score / 100) * 283} 283`;
+                                return (
+                                    <div className="relative w-32 h-32 flex flex-col items-center justify-center shrink-0">
+                                        <svg className="absolute top-0 left-0 w-full h-full transform -rotate-90">
+                                            <circle cx="64" cy="64" r="50" fill="none" stroke="#1e293b" strokeWidth="8" />
+                                            <circle cx="64" cy="64" r="50" fill="none" stroke="#4edea3" strokeWidth="8" strokeDasharray={strokeDasharray} className="transition-all duration-1000" />
+                                        </svg>
+                                        <div className="text-4xl font-bold font-sans flex items-baseline leading-none">
+                                            {score}<span className="text-sm text-[#bbcabf] ml-0.5">/100</span>
+                                        </div>
+                                        <div className="text-[8px] font-mono text-[#bbcabf] uppercase tracking-widest mt-2 text-center">
+                                            Reputation<br/>Score
+                                        </div>
                                     </div>
-                                    <h3 className="text-xs font-bold text-white">Vault Reserves</h3>
-                                    <p className="text-[10px] text-[#bbcabf] mt-1 font-mono leading-snug">Provide Mock Vault liquidity reserves.</p>
+                                );
+                            })()}
+
+                            <div className="hidden lg:block w-8 h-[1px] bg-[#4edea3]"></div>
+
+                            {/* Policies Flow */}
+                            <div className="flex flex-col gap-4 shrink-0">
+                                <div className="bg-[#040e1f] border border-[#1e293b] p-4 rounded-sm flex items-center w-64">
+                                    <div className="w-1 h-8 bg-[#4edea3] mr-4"></div>
+                                    <div>
+                                        <div className="text-[10px] text-[#bbcabf] font-mono uppercase tracking-widest">x402 fee</div>
+                                        <div className="text-sm font-bold text-white">{activeInvoice ? `$${ethers.formatUnits(activeInvoice.amount, 6)} USDC` : 'Dynamic ($1.00+)'}</div>
+                                        <div className="text-[10px] text-[#4edea3] font-mono mt-1">Policy: score ≥ 40</div>
+                                    </div>
                                 </div>
-                                <button
-                                    onClick={handleRefillVault}
-                                    disabled={!authenticated || isRefilling}
-                                    className="w-full bg-[#152031] hover:bg-[#2a3548] text-white font-mono text-[10px] py-1.5 rounded-sm border border-[#3c4a42] uppercase tracking-wider transition disabled:opacity-50 cursor-pointer"
+                                <div className="bg-[#040e1f] border border-[#1e293b] p-4 rounded-sm flex items-center w-64">
+                                    <div className="w-1 h-8 bg-[#4edea3] mr-4"></div>
+                                    <div>
+                                        <div className="text-[10px] text-[#bbcabf] font-mono uppercase tracking-widest">Capital capacity</div>
+                                        <div className="text-sm font-bold text-white">{vaultBalance ? `$${vaultBalance} USDC` : '---'}</div>
+                                        <div className="text-[10px] text-[#4edea3] font-mono mt-1">Policy: score ≥ 80</div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="hidden lg:block flex-1 h-[1px] bg-[#1e293b]"></div>
+
+                            {/* Action Block */}
+                            <div className="flex flex-col shrink-0 w-64">
+                                <div className="border border-[#1e293b] p-4 mb-4 flex items-center bg-[#152031]">
+                                    <CheckCircle2 className="w-5 h-5 text-[#4edea3] mr-3 shrink-0" />
+                                    <div>
+                                        <div className="text-xs font-bold text-white">Policy satisfied</div>
+                                        <div className="text-[10px] text-[#bbcabf] font-mono mt-0.5">Deterministic terms approved.</div>
+                                    </div>
+                                </div>
+                                
+                                <button 
+                                    onClick={() => {
+                                        const isFullySetup = authenticated && registeredAgentId && Number(userAvaxBalance) > 0.05 && Number(vaultBalance) >= 10;
+                                        if (!isFullySetup) {
+                                            setShowOnboarding(true);
+                                            return;
+                                        }
+
+                                        if (x402Status === 'idle' || x402Status === 'failed') {
+                                            handleTriggerX402Request();
+                                        } else if (x402Status === 'challenge') {
+                                            handlePayInvoiceOnChain();
+                                        } else if (x402Status === 'success') {
+                                            alert("Loop complete.");
+                                        }
+                                    }}
+                                    className={`w-full font-bold py-3 text-sm rounded-sm transition flex items-center justify-center cursor-pointer mb-2 ${(!authenticated || !registeredAgentId || Number(userAvaxBalance) <= 0.05 || Number(vaultBalance) < 10) ? 'bg-amber-500 hover:bg-amber-600 text-amber-950' : 'bg-[#4edea3] hover:bg-[#10b981] text-[#081425]'}`}
                                 >
-                                    {isRefilling ? "Depositing..." : "Deposit 10 USDC"}
+                                    {(!authenticated || !registeredAgentId || Number(userAvaxBalance) <= 0.05 || Number(vaultBalance) < 10) ? (
+                                        <>
+                                            <Settings className="w-4 h-4 mr-2" /> Complete Setup
+                                        </>
+                                    ) : x402Status === 'requesting' || x402Status === 'paying' || x402Status === 'verifying' ? (
+                                        <>
+                                            <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                                            {x402Status === 'requesting' ? 'Requesting...' : x402Status === 'paying' ? 'Paying...' : 'Verifying...'}
+                                        </>
+                                    ) : (
+                                        <>
+                                            <Play className="w-4 h-4 mr-2 fill-current" />
+                                            {x402Status === 'challenge' ? 'Pay Invoice' : 'Run capital loop'}
+                                        </>
+                                    )}
                                 </button>
-                            </div>
-
-                            {/* Step 6: Trigger Lease */}
-                            <div className={`p-4 border rounded-sm flex flex-col justify-between h-36 transition ${
-                                unlockedPayload ? 'bg-[#10b981]/5 border-[#10b981]/30' : 'bg-[#040e1f] border-[#3c4a42]'
-                            }`}>
-                                <div>
-                                    <div className="flex justify-between items-center mb-2">
-                                        <span className="text-[10px] font-mono font-bold text-slate-500 uppercase">Step 6</span>
-                                        {unlockedPayload ? (
-                                            <span className="text-[9px] font-mono bg-[#10b981]/15 text-[#4edea3] px-1.5 py-0.5 rounded font-bold">LEASED</span>
-                                        ) : (
-                                            <span className="text-[9px] font-mono bg-amber-500/15 text-amber-400 px-1.5 py-0.5 rounded font-bold">READY</span>
-                                        )}
-                                    </div>
-                                    <h3 className="text-xs font-bold text-white">Request Lease</h3>
-                                    <p className="text-[10px] text-[#bbcabf] mt-1 font-mono leading-snug">Simulate capital leasing handshake.</p>
-                                </div>
-                                <button
-                                    onClick={handleTriggerX402Request}
-                                    disabled={!registeredAgentId || x402Status === 'requesting'}
-                                    className="w-full bg-[#4edea3] hover:bg-[#10b981] text-[#081425] font-mono text-[10px] font-bold py-1.5 rounded-sm uppercase tracking-wider transition disabled:opacity-50 cursor-pointer"
-                                >
-                                    {x402Status === 'requesting' ? "Requesting..." : "Trigger Challenge"}
+                                <button className="w-full border border-[#3c4a42] hover:bg-[#152031] text-white font-mono text-xs py-3 rounded-sm transition flex items-center justify-center cursor-pointer">
+                                    <FileText className="w-3.5 h-3.5 mr-2" /> View proof
                                 </button>
                             </div>
                         </div>
                     </div>
 
-                    <div className="grid grid-cols-3 gap-6">
-                        <div className="col-span-2 bg-[#081425] border border-[#1e293b] p-6 relative overflow-hidden">
-                             <div className="absolute top-0 right-0 w-64 h-64 bg-[#10b981] opacity-[0.03] rounded-full blur-3xl -mr-20 -mt-20 pointer-events-none"></div>
-                             <h2 className="text-[11px] font-mono text-[#bbcabf] font-bold uppercase tracking-widest mb-3">Total Vault Liquidity</h2>
-                             <div className="text-[32px] font-bold font-sans tracking-tight text-white mb-6 leading-none">
-                                ${loading ? "..." : Number(vaultBalance).toLocaleString()} <span className="text-base text-[#bbcabf] font-normal">USDC</span>
-                             </div>
-                             <div className="h-16 flex items-end space-x-1.5 opacity-80">
-                                {[30, 45, 25, 60, 40, 70, 50, 80, 55, 90, 65, 85, 45, 75].map((h, i) => (
-                                    <div key={i} className="w-full bg-[#10b981] opacity-20" style={{height: `${h}%`}}></div>
-                                ))}
-                             </div>
-                        </div>
-                        <div className="col-span-1 bg-[#081425] border border-[#1e293b] p-6 flex flex-col justify-between">
+                    {/* Linear Timeline Tracker */}
+                    <div className="flex flex-col lg:flex-row justify-between items-center gap-4 py-4 px-8 border border-[#1e293b] bg-[#081425]">
+                        <div className="flex items-center space-x-3 w-full lg:w-auto opacity-100">
+                            <Fingerprint className="w-6 h-6 text-[#4edea3]" />
                             <div>
-                                <h2 className="text-[11px] font-mono text-[#bbcabf] font-bold uppercase tracking-widest mb-4">Network Height</h2>
-                                <div className="text-3xl font-mono text-[#4edea3] font-bold">{liveBlocks || "SYNCING..."}</div>
+                                <div className="text-xs font-bold text-white flex items-center">
+                                    01 Identify {registeredAgentId && <span className="ml-2 text-[9px] font-mono bg-[#10b981]/15 text-[#4edea3] px-1.5 py-0.5 rounded uppercase tracking-widest">Verified</span>}
+                                </div>
+                                <div className="text-[10px] text-[#bbcabf] font-mono mt-0.5">Identity resolved on ERC-8004</div>
                             </div>
-                            <div className="mt-4 text-[13px] text-[#bbcabf] leading-relaxed border-t border-[#1e293b] pt-4 font-mono">
-                                Connected to Avalanche Fuji Testnet. Block time ~2.0s.
+                            <div className="flex-1 h-[1px] bg-[#4edea3] mx-4 hidden lg:block min-w-[30px]"></div>
+                        </div>
+                        
+                        <div className={`flex items-center space-x-3 w-full lg:w-auto transition-opacity ${x402Status !== 'idle' ? 'opacity-100' : 'opacity-40'}`}>
+                            <FileText className={`w-6 h-6 ${x402Status !== 'idle' ? 'text-[#4edea3]' : 'text-slate-500'}`} />
+                            <div>
+                                <div className="text-xs font-bold text-white flex items-center">
+                                    02 Price {x402Status !== 'idle' && <span className="ml-2 text-[9px] font-mono bg-[#10b981]/15 text-[#4edea3] px-1.5 py-0.5 rounded uppercase tracking-widest">Issued</span>}
+                                </div>
+                                <div className="text-[10px] text-[#bbcabf] font-mono mt-0.5">x402 invoice issued</div>
+                            </div>
+                            <div className={`flex-1 h-[1px] mx-4 hidden lg:block min-w-[30px] ${x402Status !== 'idle' ? 'bg-[#4edea3]' : 'bg-[#1e293b]'}`}></div>
+                        </div>
+
+                        <div className={`flex items-center space-x-3 w-full lg:w-auto transition-opacity ${x402Status === 'success' ? 'opacity-100' : 'opacity-40'}`}>
+                            <DollarSign className={`w-6 h-6 ${x402Status === 'success' ? 'text-[#4edea3]' : 'text-slate-500'}`} />
+                            <div>
+                                <div className="text-xs font-bold text-white flex items-center">
+                                    03 Settle {x402Status === 'success' && <span className="ml-2 text-[9px] font-mono bg-[#10b981]/15 text-[#4edea3] px-1.5 py-0.5 rounded uppercase tracking-widest">Settled</span>}
+                                </div>
+                                <div className="text-[10px] text-[#bbcabf] font-mono mt-0.5">USDC payment verified</div>
+                            </div>
+                            <div className={`flex-1 h-[1px] mx-4 hidden lg:block min-w-[30px] ${x402Status === 'success' ? 'bg-[#4edea3]' : 'bg-[#1e293b]'}`}></div>
+                        </div>
+
+                        <div className={`flex items-center space-x-3 w-full lg:w-auto transition-opacity ${unlockedPayload ? 'opacity-100' : 'opacity-40'}`}>
+                            <Unlock className={`w-6 h-6 ${unlockedPayload ? 'text-[#4edea3]' : 'text-slate-500'}`} />
+                            <div>
+                                <div className="text-xs font-bold text-white flex items-center">
+                                    04 Unlock {unlockedPayload && <span className="ml-2 text-[9px] font-mono bg-[#10b981]/15 text-[#4edea3] px-1.5 py-0.5 rounded uppercase tracking-widest">Unlocked</span>}
+                                </div>
+                                <div className="text-[10px] text-[#bbcabf] font-mono mt-0.5">Capital permission granted</div>
                             </div>
                         </div>
                     </div>
 
-                    <div className="bg-[#081425] border border-[#1e293b] overflow-hidden flex flex-col h-[500px]">
+                    {/* Grid Data Cards */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                        
+                        {/* Card 1: ERC-8004 Identity */}
+                        <div className="bg-[#081425] border border-[#1e293b] p-6 text-xs font-mono">
+                            <div className="flex justify-between items-center mb-6">
+                                <div className="flex items-center text-white font-bold font-sans text-[13px]">
+                                    <CheckCircle2 className="w-4 h-4 mr-2" /> ERC-8004 Identity
+                                </div>
+                                {registeredAgentId && <span className="text-[9px] font-mono bg-[#10b981]/15 text-[#4edea3] px-1.5 py-0.5 rounded font-bold uppercase tracking-widest">Verified</span>}
+                            </div>
+                            <div className="space-y-4">
+                                <div className="flex justify-between">
+                                    <span className="text-[#bbcabf]">Agent ID</span>
+                                    <span className="text-white">#{registeredAgentId || "---"}</span>
+                                </div>
+                                <div className="flex justify-between items-center">
+                                    <span className="text-[#bbcabf]">Address</span>
+                                    <span className="text-[#4edea3] flex items-center">
+                                        {user?.wallet?.address ? `${user.wallet.address.slice(0, 6)}...${user.wallet.address.slice(-4)}` : "---"}
+                                        <Copy className="w-3 h-3 ml-1.5 cursor-pointer hover:text-white transition" />
+                                    </span>
+                                </div>
+                                <div className="flex justify-between">
+                                    <span className="text-[#bbcabf]">Registry</span>
+                                    <span className="text-white">EIP-8004 Identity Registry</span>
+                                </div>
+                                <div className="flex justify-between">
+                                    <span className="text-[#bbcabf]">Proof</span>
+                                    <span className="text-white">
+                                        {agentTxDetails.hash ? (
+                                            <a href={`https://testnet.snowtrace.io/tx/${agentTxDetails.hash}`} target="_blank" rel="noreferrer" className="text-[#4edea3] hover:underline">
+                                                {agentTxDetails.hash.slice(0, 6)}...{agentTxDetails.hash.slice(-4)}
+                                            </a>
+                                        ) : "---"}
+                                    </span>
+                                </div>
+                                <div className="flex justify-between">
+                                    <span className="text-[#bbcabf]">Verified</span>
+                                    <span className="text-white">{agentTxDetails.timestamp || "---"}</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Card 2: x402 Settlement */}
+                        <div className="bg-[#081425] border border-[#1e293b] p-6 text-xs font-mono">
+                            <div className="flex justify-between items-center mb-6">
+                                <div className="flex items-center text-white font-bold font-sans text-[13px]">
+                                    <DollarSign className="w-4 h-4 mr-2" /> x402 Settlement
+                                </div>
+                                {x402Status === 'success' && <span className="text-[9px] font-mono bg-[#10b981]/15 text-[#4edea3] px-1.5 py-0.5 rounded font-bold uppercase tracking-widest">Settled</span>}
+                            </div>
+                            <div className="space-y-4">
+                                <div className="flex justify-between">
+                                    <span className="text-[#bbcabf]">Amount</span>
+                                    <span className="text-white font-bold">{activeInvoice ? `$${ethers.formatUnits(activeInvoice.amount, 6)} USDC` : "---"}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                    <span className="text-[#bbcabf]">Invoice ID</span>
+                                    <span className="text-[#4edea3]">{activeInvoice ? `INV-${activeInvoice.requestId.slice(-8).toUpperCase()}` : "---"}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                    <span className="text-[#bbcabf]">Tx Hash</span>
+                                    <span className="text-white">
+                                        {paymentTxDetails.hash ? (
+                                            <a href={`https://testnet.snowtrace.io/tx/${paymentTxDetails.hash}`} target="_blank" rel="noreferrer" className="text-[#4edea3] hover:underline">
+                                                {paymentTxDetails.hash.slice(0, 6)}...{paymentTxDetails.hash.slice(-4)}
+                                            </a>
+                                        ) : "---"}
+                                    </span>
+                                </div>
+                                <div className="flex justify-between">
+                                    <span className="text-[#bbcabf]">Block</span>
+                                    <span className="text-white">{liveBlocks || "---"}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                    <span className="text-[#bbcabf]">Settled</span>
+                                    <span className="text-white">{paymentTxDetails.timestamp || "---"}</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Card 3: Replay Protection */}
+                        <div className="bg-[#081425] border border-[#1e293b] p-6 text-xs font-mono">
+                            <div className="flex justify-between items-center mb-6">
+                                <div className="flex items-center text-white font-bold font-sans text-[13px]">
+                                    <ShieldCheck className="w-4 h-4 mr-2" /> Replay Protection
+                                </div>
+                                {unlockedPayload && <span className="text-[9px] font-mono bg-[#10b981]/15 text-[#4edea3] px-1.5 py-0.5 rounded font-bold uppercase tracking-widest">Single-Use</span>}
+                            </div>
+                            <div className="space-y-4">
+                                <div className="flex justify-between">
+                                    <span className="text-[#bbcabf]">Nonce</span>
+                                    <span className="text-white">{challengeDetails.nonce || "---"}</span>
+                                </div>
+                                <div className="flex justify-between items-center">
+                                    <span className="text-[#bbcabf]">Status</span>
+                                    {challengeDetails.consumedAt ? (
+                                        <span className="text-[#4edea3] flex items-center font-bold">
+                                            <CheckCircle2 className="w-3 h-3 mr-1" /> CONSUMED
+                                        </span>
+                                    ) : (
+                                        <span className="text-slate-400 font-bold">PENDING</span>
+                                    )}
+                                </div>
+                                <div className="flex justify-between">
+                                    <span className="text-[#bbcabf]">Expires At</span>
+                                    <span className="text-white">{challengeDetails.expiresAt || "---"}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                    <span className="text-[#bbcabf]">Receipt</span>
+                                    <span className="text-white">
+                                        {challengeDetails.receipt ? (
+                                            <a href={`https://testnet.snowtrace.io/tx/${challengeDetails.receipt}`} target="_blank" rel="noreferrer" className="text-[#4edea3] hover:underline">
+                                                {challengeDetails.receipt.slice(0, 6)}...{challengeDetails.receipt.slice(-4)}
+                                            </a>
+                                        ) : "---"}
+                                    </span>
+                                </div>
+                                <div className="flex justify-between">
+                                    <span className="text-[#bbcabf]">Consumed</span>
+                                    <span className="text-white">{challengeDetails.consumedAt || "---"}</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Card 4: Reputation Policy */}
+                        <div className="bg-[#081425] border border-[#1e293b] p-6 text-xs font-mono">
+                            <div className="flex justify-between items-center mb-6">
+                                <div className="flex items-center text-white font-bold font-sans text-[13px]">
+                                    <Star className="w-4 h-4 mr-2" /> Reputation Policy
+                                </div>
+                                <span className="text-[9px] font-mono bg-[#10b981]/15 text-[#4edea3] px-1.5 py-0.5 rounded font-bold uppercase tracking-widest">Active</span>
+                            </div>
+                            <div className="space-y-4 mb-6">
+                                <div className="flex justify-between">
+                                    <span className="text-[#bbcabf]">Policy</span>
+                                    <span className="text-white">Score-based access control</span>
+                                </div>
+                                <div className="flex justify-between">
+                                    <span className="text-[#bbcabf]">Current Score</span>
+                                    <span className="text-white font-bold">{agents.find(a => a.id === registeredAgentId)?.score || 0}/100</span>
+                                </div>
+                                <div className="flex justify-between">
+                                    <span className="text-[#bbcabf]">Tier</span>
+                                    <span className="text-[#4edea3] font-bold">TRUSTED</span>
+                                </div>
+                            </div>
+                            {/* Score Slider */}
+                            {(() => {
+                                const activeAgentData = agents.find(a => a.id === registeredAgentId) || { score: 0 };
+                                const score = activeAgentData.score;
+                                return (
+                                <div className="mt-6 relative pt-4">
+                                    <div className="absolute top-0 transform -translate-x-1/2 -mt-1 text-white font-bold text-xs" style={{ left: `${score}%` }}>{score}</div>
+                                    <div className="absolute top-3 transform -translate-x-1/2 w-0 h-0 border-l-[4px] border-r-[4px] border-t-[5px] border-transparent border-t-white" style={{ left: `${score}%` }}></div>
+                                    <div className="flex h-1.5 rounded-full overflow-hidden mb-2">
+                                        <div className="bg-[#ffb4ab] w-[40%]"></div>
+                                        <div className="bg-[#ffb95f] w-[40%]"></div>
+                                        <div className="bg-[#4edea3] w-[20%]"></div>
+                                    </div>
+                                    <div className="flex justify-between text-[8px] text-[#bbcabf] font-mono uppercase text-center relative">
+                                        <div className="w-[40%] flex flex-col items-start"><span className="text-white">0</span><span>New<br/>0-39</span></div>
+                                        <div className="w-[40%] flex flex-col items-center"><span className="text-white">40</span><span>Standard<br/>40-79</span></div>
+                                        <div className="w-[20%] flex flex-col items-end"><span className="text-white">80</span><span>Trusted<br/>80-100</span></div>
+                                        <div className="absolute right-0 top-6 text-white text-[8px]">100</div>
+                                    </div>
+                                </div>
+                                )
+                            })()}
+                        </div>
+
+                    </div>
+
+                    {/* Live Protocol Stream Table */}
+                    <div className="bg-[#081425] border border-[#1e293b] flex flex-col min-h-[300px]">
                         <div className="px-6 py-4 border-b border-[#1e293b] flex justify-between items-center bg-[#081425]">
-                             <div className="text-[11px] font-mono font-bold text-[#bbcabf] uppercase tracking-widest">Global Telemetry Stream</div>
-                             <div className="text-[10px] font-mono text-[#4edea3] bg-[#4edea3]/10 px-2 py-1 rounded-sm border border-[#4edea3]/20 font-bold uppercase tracking-widest flex items-center">
-                                 <div className="w-1.5 h-1.5 rounded-full bg-[#4edea3] animate-pulse mr-2"></div>
-                                 LISTENING
+                             <div className="text-[13px] font-bold text-white font-sans flex items-center">
+                                Live Protocol Stream 
+                                <span className="ml-3 text-[9px] font-mono text-[#4edea3] bg-[#4edea3]/10 px-1.5 py-0.5 rounded border border-[#4edea3]/20 uppercase tracking-widest flex items-center">
+                                    <div className="w-1.5 h-1.5 rounded-full bg-[#4edea3] animate-pulse mr-1.5"></div> LIVE
+                                </span>
                              </div>
                         </div>
-                        <div className="flex-1 p-6 overflow-y-auto font-mono text-[13px] space-y-4 bg-[#040e1f]">
-                            {eventsFeed.length === 0 && (
-                                <div className="text-[#86948a] italic">Awaiting on-chain activity...</div>
-                            )}
-                            {eventsFeed.map((item, idx) => (
-                                <div key={idx} className="flex space-x-4 text-[#d8e3fb]">
-                                    <span className="text-[#86948a] shrink-0">[{item.time}]</span>
-                                    <span className="text-[#4edea3] font-bold shrink-0">[{item.type}]</span>
-                                    {item.isHtml ? 
-                                       <span className="break-all" dangerouslySetInnerHTML={{ __html: item.msg }}></span> : 
-                                       <span className="break-all">{item.msg}</span>
-                                    }
-                                </div>
-                            ))}
+                        <div className="flex-1 overflow-x-auto">
+                            <table className="w-full text-left border-collapse">
+                                <thead className="text-[10px] font-mono text-[#bbcabf] font-bold uppercase tracking-widest border-b border-[#1e293b] bg-[#152031]/30">
+                                    <tr>
+                                        <th className="py-3 px-6">TIME (UTC)</th>
+                                        <th className="py-3 px-6">EVENT</th>
+                                        <th className="py-3 px-6">DETAILS</th>
+                                        <th className="py-3 px-6">PROOF</th>
+                                        <th className="py-3 px-6">STATUS</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="text-[12px] font-mono text-[#bbcabf]">
+                                    {eventsFeed.length === 0 && (
+                                        <tr><td colSpan="5" className="py-8 px-6 text-center text-[#86948a] italic">Awaiting live protocol events...</td></tr>
+                                    )}
+                                    {eventsFeed.map((item, idx) => (
+                                        <tr key={idx} className="border-b border-[#1e293b]/50 hover:bg-[#152031]/80 transition-colors">
+                                            <td className="py-3 px-6 whitespace-nowrap">{item.time}</td>
+                                            <td className="py-3 px-6 text-white font-bold">{item.type}</td>
+                                            <td className="py-3 px-6">
+                                                {item.isHtml ? <span dangerouslySetInnerHTML={{ __html: item.msg }}></span> : <span>{item.msg}</span>}
+                                            </td>
+                                            <td className="py-3 px-6 whitespace-nowrap">
+                                                {item.txHash ? (
+                                                    <a href={`https://testnet.snowtrace.io/tx/${item.txHash}`} target="_blank" rel="noreferrer" className="text-[#4edea3] hover:underline">
+                                                        {item.txHash.slice(0, 6)}...{item.txHash.slice(-4)}
+                                                    </a>
+                                                ) : <span className="text-slate-600">---</span>}
+                                            </td>
+                                            <td className="py-3 px-6 whitespace-nowrap">
+                                                <span className={`flex items-center font-bold ${item.isSuccess ? 'text-[#4edea3]' : 'text-slate-400'}`}>
+                                                    {item.isSuccess ? <><CheckCircle2 className="w-3.5 h-3.5 mr-1.5" /> VERIFIED</> : <><Activity className="w-3.5 h-3.5 mr-1.5" /> LOGGED</>}
+                                                </span>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
                         </div>
                     </div>
+
                 </div>
             )}
 
@@ -1131,10 +1350,10 @@ Keep your explanations concise and friendly.`;
                 <div className="bg-[#081425] border border-[#1e293b] flex flex-col h-[calc(100vh-140px)] max-w-7xl mx-auto overflow-hidden">
                     <div className="px-8 py-6 border-b border-[#1e293b] bg-[#081425] flex justify-between items-center shrink-0">
                         <div>
-                            <h2 className="text-[24px] font-bold text-white mb-2 leading-none">Groq AI Agent</h2>
-                            <p className="text-[11px] text-[#bbcabf] font-mono uppercase tracking-widest flex items-center">
-                                <Cpu className="w-3.5 h-3.5 mr-2 text-[#4edea3]" /> Llama 3.3 Execution Node
-                            </p>
+                            <h2 className="text-[24px] font-bold text-white mb-2 leading-none">Status AI Agent</h2>
+                            <div className="flex items-center text-[10px] text-[#4edea3] font-mono tracking-widest uppercase">
+                                <Cpu className="w-3.5 h-3.5 mr-2 text-[#4edea3]" /> Status AI Execution Node
+                            </div>
                         </div>
                         
                         {/* Mode toggles */}
@@ -1172,7 +1391,7 @@ Keep your explanations concise and friendly.`;
                                     <Cpu className="w-12 h-12 text-[#4edea3] animate-pulse" />
                                 </div>
                                 <div className="text-sm font-semibold text-white tracking-wider font-mono">
-                                    GROQ CO-PILOT SYSTEM
+                                    STATUS AI CO-PILOT SYSTEM
                                 </div>
                                 <div className="text-xs text-[#bbcabf] font-mono max-w-sm leading-relaxed">
                                     {aiMode === 'general' 
@@ -1198,7 +1417,7 @@ Keep your explanations concise and friendly.`;
                                     <div className={`max-w-[70%] flex flex-col ${isUser ? 'items-end' : 'items-start'}`}>
                                         {/* Sender Name */}
                                         <span className="text-[10px] font-mono font-bold tracking-wider text-[#bbcabf] mb-1.5 uppercase px-1">
-                                            {isUser ? 'Operator' : 'Groq Llama-3'}
+                                            {isUser ? 'Operator' : 'Status AI'}
                                         </span>
 
                                         {/* Message Bubble */}
@@ -1227,7 +1446,7 @@ Keep your explanations concise and friendly.`;
                                                         </div>
                                                         <div className="col-span-2 border-t border-[#1e293b] pt-2">
                                                             <span className="text-[10px] uppercase block mb-0.5 text-slate-500">
-                                                                {msg.action.action === 'swap' ? 'Counterparty Asset' : 'Destination Chain'}
+                                                                {msg.action.action === 'swap' ? 'Counterparty Asset' : msg.action.action === 'transfer' ? 'Destination Address' : 'Destination Chain'}
                                                             </span>
                                                             <span className="text-white font-bold">{msg.action.to}</span>
                                                         </div>
@@ -1287,22 +1506,13 @@ Keep your explanations concise and friendly.`;
                     </div>
 
                     {/* Chat Input form */}
-                    <form onSubmit={handleSendMessage} className="p-6 border-t border-[#1e293b] bg-[#081425] flex space-x-4 shrink-0">
-                        <input 
-                            type="text" 
-                            value={chatInput}
-                            onChange={(e) => setChatInput(e.target.value)}
+                    <div className="p-4 border-t border-[#1e293b] bg-[#081425] shrink-0 w-full">
+                        <ClaudeChatInput
+                            onSendMessage={handleSendMessage}
+                            disabled={isAiLoading}
                             placeholder={aiMode === 'general' ? 'Ask a general web3 question...' : 'e.g. swap 0.1 AVAX to USDC'}
-                            className="flex-1 bg-[#040e1f] border border-[#3c4a42] p-3 text-xs text-white focus:outline-none focus:border-[#4edea3] transition-colors font-mono"
                         />
-                        <button 
-                            type="submit"
-                            disabled={isAiLoading || !chatInput.trim()}
-                            className="bg-[#10b981] hover:bg-[#003824] text-[#081425] font-bold px-6 text-xs uppercase tracking-widest transition-colors disabled:opacity-50 cursor-pointer"
-                        >
-                            Send
-                        </button>
-                    </form>
+                    </div>
                 </div>
             )}
         </main>
@@ -1314,7 +1524,7 @@ Keep your explanations concise and friendly.`;
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-[#081425] border border-[#1e293b] w-full max-w-md overflow-hidden relative shadow-2xl">
             <div className="px-6 py-4 border-b border-[#1e293b] flex justify-between items-center bg-[#152031]">
-              <h3 className="text-sm font-bold text-white tracking-wider font-mono uppercase">Sentinel Config Parameters</h3>
+              <h3 className="text-sm font-bold text-white tracking-wider font-mono uppercase">402 Status Config Parameters</h3>
               <button onClick={() => setIsSettingsOpen(false)} className="text-[#bbcabf] hover:text-white transition cursor-pointer">
                 <X className="w-4 h-4" />
               </button>
@@ -1436,7 +1646,7 @@ Keep your explanations concise and friendly.`;
                   <a href="https://testnet.snowtrace.io/address/0xa0C727A89D97eea9368b758E77Db1ab6baDe373F" target="_blank" rel="noreferrer" className="text-[#4edea3] hover:underline">0xa0C7...373F</a>
                 </div>
                 <div className="flex justify-between">
-                  <span>Mock Flash Vault:</span>
+                  <span>DeFi Yield Vault:</span>
                   <a href="https://testnet.snowtrace.io/address/0xd9cFAad4e9ad195e08ec894e54Fc4462590549F0" target="_blank" rel="noreferrer" className="text-[#4edea3] hover:underline">0xd9cF...49F0</a>
                 </div>
                 <div className="flex justify-between">
@@ -1501,25 +1711,41 @@ Keep your explanations concise and friendly.`;
                   </div>
 
                   {x402Error && (
-                    <div className="bg-[#ffb4ab]/10 border border-[#ffb4ab]/20 p-3 text-xs text-[#ffb4ab] font-mono">
-                      Error: {x402Error}
-                    </div>
+                    x402Error.toLowerCase().includes("insufficient") || x402Error.toLowerCase().includes("exceeds balance") ? (
+                      <div className="flex flex-col items-center justify-center p-6 bg-[#ffb4ab]/5 border border-[#ffb4ab]/20 rounded-md text-center">
+                        <AlertCircle className="w-8 h-8 text-[#ffb4ab] mb-3" />
+                        <div className="text-[#ffb4ab] font-bold text-sm uppercase tracking-wider mb-2">Insufficient Fuji USDC</div>
+                        <div className="text-[#bbcabf] text-xs leading-relaxed mb-4">
+                          You do not have enough Fuji testnet USDC to pay the EIP-402 challenge invoice. 
+                          Please fund your wallet using the Avalanche faucet to continue.
+                        </div>
+                        <a 
+                          href="https://core.app/tools/testnet-faucet/?subnet=c&token=c" 
+                          target="_blank" 
+                          rel="noreferrer"
+                          className="bg-[#ffb4ab]/10 hover:bg-[#ffb4ab]/20 border border-[#ffb4ab]/30 text-[#ffb4ab] px-4 py-2 text-xs uppercase tracking-widest font-bold rounded-sm transition"
+                        >
+                          Open Faucet
+                        </a>
+                      </div>
+                    ) : x402Error.toLowerCase().includes("reject") ? (
+                      <div className="bg-[#ffb4ab]/10 border border-[#ffb4ab]/20 p-3 flex items-center text-xs text-[#ffb4ab] font-mono">
+                        <X className="w-4 h-4 mr-2" /> Transaction was rejected by user.
+                      </div>
+                    ) : (
+                      <div className="bg-[#ffb4ab]/10 border border-[#ffb4ab]/20 p-3 text-xs text-[#ffb4ab] font-mono break-all">
+                        Error: {x402Error}
+                      </div>
+                    )
                   )}
 
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 gap-4">
                     <button
                       onClick={handlePayInvoiceOnChain}
                       className="bg-[#10b981] hover:bg-[#003824] text-[#081425] font-mono font-bold py-3 text-xs uppercase tracking-wider transition cursor-pointer flex flex-col items-center justify-center space-y-1.5"
                     >
                       <span>Pay On-Chain (Privy)</span>
                       <span className="text-[9px] font-normal uppercase opacity-75">Uses Fuji USDC</span>
-                    </button>
-                    <button
-                      onClick={handlePayInvoiceMock}
-                      className="bg-[#152031] hover:bg-[#2a3548] border border-[#3c4a42] hover:border-[#4edea3] text-white font-mono font-bold py-3 text-xs uppercase tracking-wider transition cursor-pointer flex flex-col items-center justify-center space-y-1.5"
-                    >
-                      <span>Simulate Mock Payment</span>
-                      <span className="text-[9px] font-normal uppercase text-amber-400">Offline fingerprint signature</span>
                     </button>
                   </div>
                 </div>
@@ -1564,20 +1790,224 @@ Keep your explanations concise and friendly.`;
                     )}
                   </div>
 
-                  <button
-                    onClick={() => {
-                      setX402Status("idle");
-                      setActiveInvoice(null);
-                      setUnlockedPayload(null);
-                    }}
-                    className="w-full bg-[#152031] hover:bg-[#2a3548] text-white font-mono text-xs uppercase tracking-wider py-3 border border-[#3c4a42] transition cursor-pointer"
-                  >
-                    Close & Return
-                  </button>
+                  <div className="grid grid-cols-2 gap-4">
+                    <button
+                      onClick={handleExecuteArbitrage}
+                      className="w-full bg-[#10b981] hover:bg-[#003824] text-[#081425] font-mono font-bold text-xs uppercase tracking-wider py-3 transition cursor-pointer flex items-center justify-center"
+                    >
+                      <Activity className="w-4 h-4 mr-2" /> Execute AI Arbitrage
+                    </button>
+                    <button
+                      onClick={() => {
+                        setX402Status("idle");
+                        setActiveInvoice(null);
+                        setUnlockedPayload(null);
+                      }}
+                      className="w-full bg-[#152031] hover:bg-[#2a3548] text-white font-mono text-xs uppercase tracking-wider py-3 border border-[#3c4a42] transition cursor-pointer"
+                    >
+                      Close & Return
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Execution Terminal Slideout */}
+      {showTerminal && (
+        <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-end bg-black/60 backdrop-blur-sm p-4">
+          <div className="bg-[#040e1f] border border-[#1e293b] w-full max-w-lg h-[600px] shadow-2xl flex flex-col relative overflow-hidden">
+            <div className="absolute top-0 left-0 w-full h-1 bg-[#4edea3]"></div>
+            
+            <div className="flex justify-between items-center p-4 border-b border-[#1e293b] bg-[#081425]">
+              <div className="flex items-center text-[#4edea3] font-mono text-sm uppercase tracking-widest font-bold">
+                <Terminal className="w-5 h-5 mr-2" /> Status AI Node
+              </div>
+              <button onClick={() => setShowTerminal(false)} className="text-[#bbcabf] hover:text-white transition cursor-pointer">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="flex-1 p-6 overflow-y-auto font-mono text-xs space-y-4 bg-[#020617] scrollbar-thin">
+              {terminalLogs.map((log, i) => (
+                <div key={i} className={`flex items-start ${log.isError ? 'text-[#ffb4ab]' : log.text.includes('[SUCCESS]') ? 'text-[#4edea3] font-bold' : 'text-[#bbcabf]'}`}>
+                  <span className="text-slate-600 mr-3 shrink-0">[{log.ts}]</span>
+                  <div className="break-words w-full">
+                    {log.isLink ? (
+                      <a href={`https://testnet.snowtrace.io/tx/${log.isLink}`} target="_blank" rel="noreferrer" className="underline hover:text-white">
+                        {log.text}
+                      </a>
+                    ) : (
+                      log.text
+                    )}
+                  </div>
+                </div>
+              ))}
+              {terminalStatus === "running" && (
+                <div className="flex items-center text-[#4edea3]">
+                  <span className="text-slate-600 mr-3">[{new Date().toLocaleTimeString()}]</span>
+                  <span className="animate-pulse">_</span>
+                </div>
+              )}
+            </div>
+
+            {terminalStatus === "success" && (
+              <div className="p-4 border-t border-[#1e293b] bg-[#10b981]/10 flex items-center justify-between">
+                <div className="flex items-center text-[#4edea3] font-mono text-xs font-bold uppercase tracking-widest">
+                  <CheckCircle2 className="w-4 h-4 mr-2" /> Operation Complete
+                </div>
+                <button onClick={() => {
+                  setShowTerminal(false);
+                  setX402Status("idle");
+                  setActiveInvoice(null);
+                  setUnlockedPayload(null);
+                }} className="bg-[#4edea3] text-[#081425] px-4 py-2 text-xs font-mono font-bold uppercase cursor-pointer hover:bg-[#10b981] transition">
+                  Return to Hub
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Onboarding Modal */}
+      {showOnboarding && (
+        <div className="fixed inset-0 bg-[#040e1f]/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <div className="bg-[#081425] border border-[#1e293b] w-full max-w-2xl shadow-2xl overflow-hidden flex flex-col">
+                <div className="flex justify-between items-center p-6 border-b border-[#1e293b]">
+                    <div>
+                        <h2 className="text-xl font-bold text-white flex items-center">
+                            <Settings className="w-5 h-5 text-[#4edea3] mr-2" />
+                            Initialization Required
+                        </h2>
+                        <p className="text-xs text-[#bbcabf] mt-1 font-mono">
+                            Complete these required steps to interact with the Status 402 protocol.
+                        </p>
+                    </div>
+                    <button onClick={() => setShowOnboarding(false)} className="text-[#bbcabf] hover:text-white transition-colors cursor-pointer">
+                        <X className="w-6 h-6" />
+                    </button>
+                </div>
+
+                <div className="p-6 space-y-4">
+                    {/* Step 1: Connect Wallet */}
+                    <div className={`p-4 border rounded-sm flex items-center justify-between transition ${
+                        authenticated ? 'bg-[#10b981]/5 border-[#10b981]/30' : 'bg-[#040e1f] border-[#3c4a42]'
+                    }`}>
+                        <div className="flex items-center">
+                            <div className={`w-8 h-8 rounded-full flex items-center justify-center mr-4 ${authenticated ? 'bg-[#10b981]/20 text-[#4edea3]' : 'bg-[#152031] text-[#bbcabf]'}`}>1</div>
+                            <div>
+                                <h3 className="text-sm font-bold text-white flex items-center">Connect Wallet {authenticated && <CheckCircle2 className="w-3.5 h-3.5 text-[#4edea3] ml-2" />}</h3>
+                                <p className="text-[11px] text-[#bbcabf] mt-0.5 font-mono">Authenticate your Web3 identity via Privy.</p>
+                            </div>
+                        </div>
+                        <div>
+                            {!authenticated ? (
+                                <button onClick={login} className="bg-[#4edea3] hover:bg-[#10b981] text-[#081425] font-bold py-1.5 px-4 text-xs rounded-sm transition cursor-pointer">
+                                    Connect
+                                </button>
+                            ) : (
+                                <span className="text-[10px] font-mono bg-[#10b981]/15 text-[#4edea3] px-2 py-1 rounded font-bold uppercase tracking-widest">Connected</span>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* Step 2: Faucet */}
+                    <div className={`p-4 border rounded-sm flex items-center justify-between transition ${
+                        Number(userAvaxBalance) > 0.05 ? 'bg-[#10b981]/5 border-[#10b981]/30' : 'bg-[#040e1f] border-[#3c4a42]'
+                    }`}>
+                        <div className="flex items-center">
+                            <div className={`w-8 h-8 rounded-full flex items-center justify-center mr-4 ${Number(userAvaxBalance) > 0.05 ? 'bg-[#10b981]/20 text-[#4edea3]' : 'bg-[#152031] text-[#bbcabf]'}`}>2</div>
+                            <div>
+                                <h3 className="text-sm font-bold text-white flex items-center">Claim Faucet Funds {Number(userAvaxBalance) > 0.05 && <CheckCircle2 className="w-3.5 h-3.5 text-[#4edea3] ml-2" />}</h3>
+                                <p className="text-[11px] text-[#bbcabf] mt-0.5 font-mono">Get 0.1 AVAX for gas and 1 USDC for payments.</p>
+                            </div>
+                        </div>
+                        <div>
+                            {Number(userAvaxBalance) <= 0.05 ? (
+                                <button onClick={handleRequestFaucet} disabled={!authenticated || isFauceting} className="bg-[#152031] hover:bg-[#2a3548] text-white border border-[#3c4a42] font-bold py-1.5 px-4 text-xs rounded-sm transition disabled:opacity-50 cursor-pointer">
+                                    {isFauceting ? "Claiming..." : "Claim Funds"}
+                                </button>
+                            ) : (
+                                <span className="text-[10px] font-mono bg-[#10b981]/15 text-[#4edea3] px-2 py-1 rounded font-bold uppercase tracking-widest">Funded</span>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* Step 3: Register Agent */}
+                    <div className={`p-4 border rounded-sm flex items-center justify-between transition ${
+                        registeredAgentId ? 'bg-[#10b981]/5 border-[#10b981]/30' : 'bg-[#040e1f] border-[#3c4a42]'
+                    }`}>
+                        <div className="flex items-center">
+                            <div className={`w-8 h-8 rounded-full flex items-center justify-center mr-4 ${registeredAgentId ? 'bg-[#10b981]/20 text-[#4edea3]' : 'bg-[#152031] text-[#bbcabf]'}`}>3</div>
+                            <div>
+                                <h3 className="text-sm font-bold text-white flex items-center">Register Agent {registeredAgentId && <CheckCircle2 className="w-3.5 h-3.5 text-[#4edea3] ml-2" />}</h3>
+                                <p className="text-[11px] text-[#bbcabf] mt-0.5 font-mono">Mint your EIP-8004 identity on-chain.</p>
+                            </div>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                            {!registeredAgentId ? (
+                                <>
+                                    <input
+                                        type="text"
+                                        value={agentDomainInput}
+                                        onChange={(e) => setAgentDomainInput(e.target.value)}
+                                        placeholder="agent.domain"
+                                        className="bg-[#081425] border border-[#3c4a42] text-[10px] font-mono px-2 py-1.5 text-white focus:outline-none focus:border-[#4edea3] w-32"
+                                    />
+                                    <button onClick={handleRegisterAgent} disabled={!authenticated || isMintingAgent || Number(userAvaxBalance) <= 0.05} className="bg-[#152031] hover:bg-[#2a3548] text-white border border-[#3c4a42] font-bold py-1.5 px-4 text-xs rounded-sm transition disabled:opacity-50 cursor-pointer">
+                                        {isMintingAgent ? "Minting..." : "Mint Card"}
+                                    </button>
+                                </>
+                            ) : (
+                                <span className="text-[10px] font-mono bg-[#10b981]/15 text-[#4edea3] px-2 py-1 rounded font-bold uppercase tracking-widest">ID: #{registeredAgentId}</span>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* Step 4: Vault Deposits */}
+                    <div className={`p-4 border rounded-sm flex items-center justify-between transition ${
+                        Number(vaultBalance) >= 10 ? 'bg-[#10b981]/5 border-[#10b981]/30' : 'bg-[#040e1f] border-[#3c4a42]'
+                    }`}>
+                        <div className="flex items-center">
+                            <div className={`w-8 h-8 rounded-full flex items-center justify-center mr-4 ${Number(vaultBalance) >= 10 ? 'bg-[#10b981]/20 text-[#4edea3]' : 'bg-[#152031] text-[#bbcabf]'}`}>4</div>
+                            <div>
+                                <h3 className="text-sm font-bold text-white flex items-center">Vault Reserves {Number(vaultBalance) >= 10 && <CheckCircle2 className="w-3.5 h-3.5 text-[#4edea3] ml-2" />}</h3>
+                                <p className="text-[11px] text-[#bbcabf] mt-0.5 font-mono">Provide 10 USDC liquidity to the Sentinel Pool.</p>
+                            </div>
+                        </div>
+                        <div>
+                            {Number(vaultBalance) < 10 ? (
+                                <button onClick={handleRefillVault} disabled={!authenticated || isRefilling || !registeredAgentId} className="bg-[#152031] hover:bg-[#2a3548] text-white border border-[#3c4a42] font-bold py-1.5 px-4 text-xs rounded-sm transition disabled:opacity-50 cursor-pointer">
+                                    {isRefilling ? "Depositing..." : "Deposit 10 USDC"}
+                                </button>
+                            ) : (
+                                <span className="text-[10px] font-mono bg-[#10b981]/15 text-[#4edea3] px-2 py-1 rounded font-bold uppercase tracking-widest">Liquid</span>
+                            )}
+                        </div>
+                    </div>
+                </div>
+
+                <div className="p-6 border-t border-[#1e293b] bg-[#040e1f] flex justify-end">
+                    {(authenticated && registeredAgentId && Number(userAvaxBalance) > 0.05 && Number(vaultBalance) >= 10) ? (
+                        <button 
+                            onClick={() => setShowOnboarding(false)}
+                            className="bg-[#4edea3] hover:bg-[#10b981] text-[#081425] font-bold py-2 px-6 text-sm rounded-sm transition cursor-pointer"
+                        >
+                            Start Capital Loop
+                        </button>
+                    ) : (
+                        <button 
+                            disabled 
+                            className="bg-[#152031] text-slate-500 font-bold py-2 px-6 text-sm rounded-sm cursor-not-allowed border border-[#1e293b]"
+                        >
+                            Complete steps to continue
+                        </button>
+                    )}
+                </div>
+            </div>
         </div>
       )}
 

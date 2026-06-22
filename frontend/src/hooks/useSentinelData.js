@@ -50,7 +50,7 @@ export function useSentinelData() {
 
     const identityContract = new ethers.Contract(contractAddresses.identityRegistry, INT_IDENTITY_ABI, provider);
     const repContract = new ethers.Contract(contractAddresses.reputationRegistry, INT_REPUTATION_ABI, provider);
-    const vaultContract = new ethers.Contract(contractAddresses.mockVault, INT_VAULT_ABI, provider);
+    const vaultContract = new ethers.Contract(contractAddresses.liquidityVault, INT_VAULT_ABI, provider);
     const usdcContract = new ethers.Contract(USDC_FUJI_ADDRESS, ERC20_ABI, provider);
 
     async function initializeOnChainState() {
@@ -59,7 +59,7 @@ export function useSentinelData() {
         setLiveBlocks(currentBlock);
 
         // Fetch Real Vault Liquidity
-        const balance = await usdcContract.balanceOf(contractAddresses.mockVault);
+        const balance = await usdcContract.balanceOf(contractAddresses.liquidityVault);
         setVaultBalance(ethers.formatUnits(balance, 6));
 
         // Scan Event Logs for Dynamic Agent Discovery
@@ -154,7 +154,7 @@ export function useSentinelData() {
       const feedItem = {
         time: new Date().toLocaleTimeString(),
         type: 'FLASH_LOAN',
-        msg: `Mock Flash Loan Executed for ${recipient.slice(0,6)}... ($${ethers.formatUnits(amount, 6)} allocated)`
+        msg: `Liquidity Lease Executed for ${recipient.slice(0,6)}... ($${ethers.formatUnits(amount, 6)} allocated)`
       };
       setEventsFeed(prev => [feedItem, ...prev].slice(0, 50));
     };
@@ -194,12 +194,13 @@ export function useSentinelData() {
     return tx.hash;
   };
 
-  const addLog = (type, msg, isSuccess = false) => {
+  const addLog = (type, msg, isSuccess = false, txHash = null) => {
     setEventsFeed(prev => [{
       time: new Date().toLocaleTimeString(),
       type,
       msg,
-      isSuccess
+      isSuccess,
+      txHash
     }, ...prev].slice(0, 50));
   };
 

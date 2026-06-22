@@ -2,7 +2,7 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { PrivyProvider } from '@privy-io/react-auth'
 import './index.css'
-import App from './App.jsx'
+import RootApp from './RootApp.jsx'
 
 const avalancheFuji = {
   id: 43113,
@@ -41,7 +41,7 @@ createRoot(document.getElementById('root')).render(
         supportedChains: [avalancheFuji],
       }}
     >
-      <App />
+      <RootApp />
     </PrivyProvider>
   </StrictMode>,
 )
