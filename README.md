@@ -1,138 +1,180 @@
-# Liquidity Sentinel
+# 🛡️ Liquidity Sentinel
 
-An autonomous agent that requests capital from a paywalled API, pays with real USDC on Fuji testnet, and gets **better pricing the higher its on-chain reputation score**.
-
-This is the reputation-gated capital access demo. The API reads the agent's reputation score from the `ReputationRegistry` and adjusts the invoice amount. Agents with higher scores pay lower fees.
-
-## Quick Start
-
-```bash
-# Clone and install dependencies
-npm install
-
-# Copy environment template
-cp .env.example .env
-
-# Run the full demo (mock mode; no testnet funding needed)
-npm run demo
-```
-
-## Architecture
-
-```
-Agent ── POST /request-capital ──► API Gateway
-   │                                   │
-   │                              402 Invoice (amount based on reputation)
-   │<─────────────────────────────────┤
-   │                                   │
-   │   USDC transfer to vault         │
-   │──────────────────────────────────►│
-   │                                   │
-   │      X-PAYMENT header            │
-   │──────────────────────────────────►│
-   │                                   │
-   │   200 + capitalPermission        │
-   └───────────────────────────────────┘
-```
-
-The agent signs an ERC-20 USDC transfer to the vault address. The API verifies the transaction receipt on-chain, checks amount and destination, and unlocks the capital permission payload.
-
-## Configuration
-
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `PAYMENT_MODE` | `mock` (local) or `fuji` (real testnet) | `mock` |
-| `REPUTATION_MODE` | `mock`, `static-low`, or `rpc` (on-chain) | `mock` |
-| `MOCK_REPUTATION_SCORE` | Score used in mock mode (0-100) | `95` |
-| `LOW_TIER_AMOUNT` | Invoice for trusted agents (in USDC wei) | `10000` |
-| `MID_TIER_AMOUNT` | Invoice for standard-risk agents | `100000` |
-| `HIGH_TIER_AMOUNT` | Invoice for new agents | `500000` |
-| `FUJI_RPC_URL` | Fuji C-Chain RPC endpoint | `https://api.avax-test.network/ext/bc/C/rpc` |
-| `USDC_FUJI_ADDRESS` | USDC token address on Fuji | `0x5425890298aed601595a70AB815c96711a31Bc65` |
-| `SENTINEL_VAULT_ADDRESS` | Vault that receives payments | `0x715F47Ce330aF0fd7130290874a182FBaF1D892F` |
-| `AGENT_PRIVATE_KEY` | Agent's funded private key (fuji mode) | — |
-| `REPUTATION_REGISTRY_ADDRESS` | On-chain ReputationRegistry contract | `0xa0C727A89D97eea9368b758E77Db1ab6baDe373F` |
-| `IDENTITY_REGISTRY_ADDRESS` | On-chain IdentityRegistry contract | `0xf103838D5d0AE522198E162dA4732948d5c0a24f` |
-| `SENTINEL_PRIVATE_KEY` | API's private key for on-chain feedback | — |
-| `AGENT_AI_MODE` | `off`/`mock` auto-approves; `live` uses Groq | `off` in `.env.example` |
-| `GROQ_API_KEY` | Groq API key (for AI mode) | — |
-
-## Running the Full Fuji Demo
-
-1. Fund a test wallet with Fuji AVAX and USDC (use the faucet endpoint or a faucet dapp).
-2. Register an agent identity via the frontend or directly call `IdentityRegistry.newAgent`.
-3. Set `PAYMENT_MODE=fuji` and `REPUTATION_MODE=rpc` in your `.env`.
-4. Run `npm run demo -- --fuji` to see the real cycle.
-
-The plain `npm run demo` command always uses mock mode so it remains safe and deterministic.
-
-## Project Structure
-
-| Component | Location | Description |
-|-----------|----------|-------------|
-| API Gateway | `api/src/server.js` | Node HTTP server implementing the x402 402 state machine |
-| Agent | `agent/src/agent.js` | Autonomous buyer that handles 402 and pays |
-| Shared | `shared/` | Settlement helpers (`createMockTxHash`, `encodePaymentHeader`) |
-| Frontend | `frontend/src/` | React dashboard with x402 terminal and trust registry |
-| Contracts | `contracts/` | Solidity contracts for IdentityRegistry and ReputationRegistry |
-| Scripts | `scripts/` | Demo and smoke tests |
-
-## What's Real vs. Mocked
-
-- **Mock mode (default)** - Everything runs locally without testnet. Agent generates a deterministic hash that the API verifies. No blockchain interaction.
-- **Fuji mode** - All on-chain interactions are real:
-  - Agent signs and broadcasts an actual ERC-20 USDC transfer.
-  - API fetches transaction receipt from Fuji RPC.
-  - API parses `Transfer` event logs to verify token, destination, amount.
-  - Reputation scores are read from the deployed `ReputationRegistry` contract.
-  - After successful payment, the API submits on-chain feedback when `SENTINEL_PRIVATE_KEY` is configured.
-
-In mock mode, the reputation score comes from `MOCK_REPUTATION_SCORE` (default 95 = trusted tier). In `REPUTATION_MODE=rpc`, the real on-chain score is used.
-
-## Demo Scenarios
-
-- **Happy path** - Agent with score 95 gets invoice of 10,000 wei (trusted tier), pays, unlocks capital.
-- **Negative paths** (tested in `npm run smoke:negative`):
-  - Wrong payment amount → rejected
-  - Replay attack → rejected
-  - Unknown request ID → rejected
-  - Expired invoice → rejected
-- **Different tiers** - Run `npm run demo:two-agent` to see agents with scores 95 (trusted, low fee) and 30 (new-agent, high fee) side by side.
-
-## Frontend
-
-```bash
-cd frontend
-npm install
-npm run dev
-```
-
-The dashboard defaults to `http://localhost:4020/api/v1`. Copy `frontend/.env.example` to `frontend/.env` to override the API, RPC, Privy, or optional Groq settings.
-
-## Future Work (Out of Scope for 48h Demo)
-
-- Production-grade persistence (invoices stored in database)
-- Rate limiting and DoS protection
-- Multi-network support
-- Advanced reputation algorithms (time-decayed, volume-weighted)
-- Integration with custody providers or KYC
-- Chainlink or other price oracles
-- Mainnet deployment
-
-These are natural next steps after the proof-of-concept.
-
-## Proof of Life
-
-A successful Fuji run produces output like:
-
-```
-[agent] payment.sent txHash=0x7c8e9f...
-[agent] payment.explorer url=https://testnet.snowtrace.io/tx/0x7c8e9f...
-[agent] capital_permission.received vault=... amount=...
-```
-
-Visit the URL to see the confirmed USDC transfer on Fuji.
+An autonomous, reputation-gated capital access protocol. Agents request capital lease permissions from a paywalled API, settle invoices in real USDC on the Avalanche Fuji Testnet, and receive **lower fees the higher their on-chain reputation score**.
 
 ---
 
-Built for the x402 Capital Access challenge.
+## 📸 Interface Preview
+
+### Operational Hub & Telemetry Dashboard
+![Sentinel Operational Hub](/frontend/public/landing.png)
+
+### Live Billing Terminal
+![Sentinel Billing Terminal](/frontend/src/assets/images/terminal.png)
+
+---
+
+## 💡 Core Architecture & The x402 Protocol
+
+Liquidity Sentinel implements an **HTTP 402 Payment Required** state machine (coined **x402**) to control access to high-value resources—specifically, capital pools for arbitrage or lending. Rather than requiring pre-negotiated API keys or credit cards, the API dynamically issues pricing contracts on-demand, which agents settle on-chain.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Agent as Autonomous Agent
+    participant API as API Gateway (Sentinel)
+    participant Ledger as Avalanche Fuji C-Chain
+    
+    Agent->>API: POST /request-capital (agentId, amount, strategy)
+    Note over API: Queries ReputationRegistry<br/>on-chain score
+    API-->>Agent: HTTP 402 Payment Required (Invoice, Amount, Destination)
+    Note over Agent: Evaluates Invoice & ROI
+    Agent->>Ledger: Broadcast USDC transfer (to Vault, Amount)
+    Ledger-->>Agent: Receipt (Tx Hash)
+    Agent->>API: POST /request-capital with X-Payment (Base64 Tx Hash) & X-Request-ID
+    Note over API: Verifies Tx receipt on Fuji,<br/>Checks Destination, Token, Amount & Nonce
+    Note over API: Submits positive reputation feedback to Registry
+    API-->>Agent: HTTP 200 OK (Capital Permission Lease & Payload)
+```
+
+### Protocol Phases
+
+1. **Identify**: Resolve the agent's identity using the [EIP-8004](https://github.com/ethereum/EIPs) compatible [IdentityRegistry](file:///Users/manas/Desktop/Liquidity-Sentinel/contracts/IdentityRegistry.sol) contract.
+2. **Price**: Read the agent's reputation score from [ReputationRegistry](file:///Users/manas/Desktop/Liquidity-Sentinel/contracts/ReputationRegistry.sol) and determine the invoice amount based on three tiers.
+3. **Settle**: The agent signs and broadcasts an ERC-20 transaction transferring USDC to the vault.
+4. **Unlock**: The API gateway verifies the transaction receipt on-chain, tracks it to prevent replay attacks, and unlocks the capital lease permission.
+
+---
+
+## ⚡ Reputation Tiers
+
+Reputation is mapped directly to fees, rewarding well-behaved agents with better terms:
+
+| Tier | Reputation Range | Invoice Fee (USDC) | Description |
+| :--- | :--- | :--- | :--- |
+| **Trusted Flow** | `80–100` | **$0.01** (10,000 wei) | High-reputation agents with proven track records. |
+| **Standard Risk** | `40–79` | **$0.10** (100,000 wei) | Standard agents with moderate activity. |
+| **New Agent** | `0–39` | **$0.50** (500,000 wei) | New or penalized agents with high risk parameters. |
+
+---
+
+## 📂 Project Directory Structure
+
+| Module | Location | Description |
+| :--- | :--- | :--- |
+| **API Gateway** | [api/src/server.js](file:///Users/manas/Desktop/Liquidity-Sentinel/api/src/server.js) | Node server implementing the 402 state machine and telemetry stream. |
+| **Agent Core** | [agent/src/agent.js](file:///Users/manas/Desktop/Liquidity-Sentinel/agent/src/agent.js) | Autonomous buyer with modular strategy execution and wallet integrations. |
+| **Telemetry Web Console** | [frontend/src/App.jsx](file:///Users/manas/Desktop/Liquidity-Sentinel/frontend/src/App.jsx) | React/Vite dashboard featuring live telemetry, wallet controls, and an AI chat assistant. |
+| **Smart Contracts** | [contracts/](file:///Users/manas/Desktop/Liquidity-Sentinel/contracts) | Deployed IdentityRegistry, ReputationRegistry, and LiquidityVault contracts. |
+| **Verifiers** | [api/src/services/paymentVerifier.js](file:///Users/manas/Desktop/Liquidity-Sentinel/api/src/services/paymentVerifier.js) | Handles cryptographic validation for both mock and live Fuji transactions. |
+| **Scripts & Demos** | [scripts/](file:///Users/manas/Desktop/Liquidity-Sentinel/scripts) | E2E integration tests, smoke tests, and multi-agent scenarios. |
+
+---
+
+## 📜 Deployed Contracts (Avalanche Fuji)
+
+The registry and token addresses mapped inside [addresses.json](file:///Users/manas/Desktop/Liquidity-Sentinel/frontend/src/addresses.json) are:
+
+* **USDC Token Address**: `0x5425890298aed601595a70AB815c96711a31Bc65`
+* **Identity Registry**: `0xf103838D5d0AE522198E162dA4732948d5c0a24f`
+* **Reputation Registry**: `0xa0C727A89D97eea9368b758E77Db1ab6baDe373F`
+* **Sentinel Vault / Pool**: `0x715F47Ce330aF0fd7130290874a182FBaF1D892F`
+* **Mock Liquidity Vault**: `0xd9cFAad4e9ad195e08ec894e54Fc4462590549F0`
+
+---
+
+## ⚙️ Configuration Setup
+
+A central configuration resides in [api/src/config.js](file:///Users/manas/Desktop/Liquidity-Sentinel/api/src/config.js). Copy `.env.example` to `.env` in the root folder and configure:
+
+```env
+API_PORT=4020
+NETWORK=avalanche-fuji
+PAYMENT_MODE=fuji         # 'mock' or 'fuji'
+REPUTATION_MODE=rpc       # 'mock' or 'rpc' (on-chain)
+MOCK_REPUTATION_SCORE=95
+
+FUJI_RPC_URL=https://api.avax-test.network/ext/bc/C/rpc
+USDC_FUJI_ADDRESS=0x5425890298aed601595a70AB815c96711a31Bc65
+SENTINEL_VAULT_ADDRESS=0x715F47Ce330aF0fd7130290874a182FBaF1D892F
+
+AGENT_PRIVATE_KEY=your_funded_fuji_private_key
+SENTINEL_PRIVATE_KEY=your_sentinel_admin_private_key
+
+VITE_PRIVY_APP_ID=cmqfk2zma002f0clajcnopn2g
+VITE_GROQ_API_KEY=gsk_your_groq_api_key
+```
+
+---
+
+## 🛠️ Local Installation & Development
+
+### 1. Install Dependencies
+Run `npm install` at the project root to install backend packages, and then do the same inside the `frontend` folder:
+```bash
+# Install root/backend dependencies
+npm install
+
+# Install frontend dependencies
+cd frontend && npm install
+```
+
+### 2. Start Servers
+Run the API gateway and the React frontend locally:
+```bash
+# Start backend API (runs on http://localhost:4020)
+cd api && npm run dev
+
+# Start frontend Vite server (runs on http://localhost:5173)
+cd frontend && npm run dev
+```
+
+---
+
+## 🚀 Cloud Deployment (Vercel)
+
+### Backend API Deployment
+1. Import the repository in Vercel.
+2. Set the **Root Directory** to `api`.
+3. Select **Node.js** as the framework.
+4. Input your backend environment variables (set `PAYMENT_MODE=fuji`, `REPUTATION_MODE=rpc`, and configure your `SENTINEL_PRIVATE_KEY`).
+
+### Frontend Telemetry Dashboard Deployment
+1. Import the same repository as a new project in Vercel.
+2. Set the **Root Directory** to `frontend`.
+3. Select **Vite** as the framework.
+4. Configure the following environment variables:
+   * `VITE_API_URL` = `https://your-deployed-backend.vercel.app/api/v1`
+   * `VITE_FUJI_RPC_URL` = `https://api.avax-test.network/ext/bc/C/rpc`
+   * `VITE_PRIVY_APP_ID` = `cmqfk2zma002f0clajcnopn2g`
+   * `VITE_GROQ_API_KEY` = `your_groq_api_key`
+
+---
+
+## 🧪 Testing & Verification Scripts
+
+The repository includes pre-built scripts to test different scenarios and verify security parameters.
+
+### E2E Local Walkthrough (Mock Mode)
+Simulates a successful 402 challenge flow locally without requiring Fuji tokens:
+```bash
+npm run demo
+```
+
+### Negative Path Security Tests
+Verifies protection against payment manipulation, replay attacks, and expired invoices:
+```bash
+npm run smoke:negative
+```
+
+### Multi-Agent Behavior
+Runs a side-by-side simulation demonstrating a high-reputation agent (trusted) and a low-reputation agent (high risk) requesting capital to observe the differential pricing tiering:
+```bash
+npm run demo:two-agent
+```
+
+### E2E Live Testnet Walkthrough (Fuji C-Chain)
+Broadcasts real transactions on Fuji C-Chain:
+```bash
+npm run demo -- --fuji
+```
